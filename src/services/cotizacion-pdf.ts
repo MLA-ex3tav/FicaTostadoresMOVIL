@@ -13,7 +13,7 @@ import { getCompanyData } from "../lib/company";
 type RGB = [number, number, number];
 
 const COLOR_PRIMARY: RGB = [232, 93, 4];
-const COLOR_DARK: RGB = [31, 31, 37];
+const COLOR_DARK: RGB = [28, 28, 32];
 const COLOR_LIGHT_BG: RGB = [248, 248, 250];
 const COLOR_BORDER: RGB = [220, 218, 212];
 const COLOR_TEXT_DARK: RGB = [30, 30, 35];
@@ -25,20 +25,23 @@ function text(value: unknown, fallback = "-"): string {
   return result || fallback;
 }
 
-function money(value: number): string {
-  return new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency: "CLP",
-    maximumFractionDigits: 0,
-  }).format(value);
+function moneyCLP(value: number): string {
+  const rounded = Math.round(value);
+  return `${rounded.toLocaleString("es-CL")}$`;
 }
 
 function dateLabel(date = new Date()): string {
-  return date.toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}-${month}-${date.getFullYear()}`;
+}
+
+function comunaFrom(address: string): string {
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 1] : "";
 }
 
 function numberFrom(...values: unknown[]): number {
@@ -93,12 +96,14 @@ export interface CotizacionPdf {
   item: SolicitudRemota;
 }
 
-/** Genera el PDF profesional de la orden aprobada. */
+const IVA_RATE = 0.19;
+
+/** Genera el PDF de la cotización replicando el diseño oficial de FICA. */
 export async function generarCotizacionPdf(item: SolicitudRemota): Promise<CotizacionPdf> {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth(); // 297mm
-  const pageHeight = doc.internal.pageSize.getHeight(); // 210mm
-  const margin = 12;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+  const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
+  const margin = 14;
 
   let catalog = getCatalogo();
   if (catalog.length === 0) {
@@ -112,275 +117,292 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   const products = Array.isArray(item.products)
     ? item.products.map((product) => lineItem(product))
     : [];
-  const subtotal = products.reduce((sum, product) => sum + product.quantity * product.unitPrice, 0);
-
-  // 1. Header principal
-  const logo = await imageDataUrl("/assets/logo.webp");
-  if (logo) {
-    doc.addImage(logo, "PNG", margin, 10, 32, 32);
-  }
+  const neto = products.reduce((sum, product) => sum + product.quantity * product.unitPrice, 0);
+  const iva = Math.round(neto * IVA_RATE);
+  const total = neto + iva;
 
   const company = getCompanyData();
-  const companyName = text(company?.name, "TOSTADORES FICA LTDA");
+  const companyName = text(company.name, "TOSTADORES FICA LTDA");
+  const companyTaxId = text(company.taxId, "76.683.592-9");
   const companyAddress = text(
-    company ? [company.address, company.city, company.region].filter(Boolean).join(", ") : "",
+    [company.address, company.city, company.region].filter(Boolean).join(", "),
     "San Ramón Pc. 39 Lt. 12-19, Padre Las Casas, Chile",
   );
-  const companyPhone = text(company?.phone, "+56 9 85088171");
-  const companyEmail = text(company?.email, "tostadoresfica@gmail.com");
-  const companyWebsite = text(company?.website, "www.tostadoresfica.cl");
-
-  // Info Empresa (Izquierda)
-  doc.setTextColor(...COLOR_DARK);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text(companyName.toUpperCase().slice(0, 40), margin + 36, 17);
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.text("FÁBRICA DE MAQUINARIAS · FRUTOS SECOS & PROCESAMIENTO", margin + 36, 22);
-  doc.text(companyAddress.slice(0, 60), margin + 36, 26);
-  doc.text(`Teléfono: ${companyPhone}  |  Email: ${companyEmail}`.slice(0, 72), margin + 36, 30);
-  doc.text(`Sitio Web: ${companyWebsite}`.slice(0, 60), margin + 36, 34);
-
-  // Banner Documento (Derecha)
-  const headerCardX = 182;
-  const headerCardW = 103;
-  doc.setFillColor(...COLOR_DARK);
-  doc.roundedRect(headerCardX, 10, headerCardW, 30, 3, 3, "F");
-
-  doc.setTextColor(...COLOR_PRIMARY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text("COTIZACIÓN DE COMPRA", headerCardX + 8, 17);
-
-  doc.setTextColor(...COLOR_WHITE);
-  doc.setFontSize(9);
-  doc.text(`N° DOCUMENTO: ${text(item.id).slice(0, 16)}`, headerCardX + 8, 23);
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.text(`FECHA EMISIÓN: ${dateLabel()}`, headerCardX + 8, 29);
-  doc.text("VALIDEZ: 10 DÍAS HÁBILES", headerCardX + 8, 34);
-
-  // 2. Tarjetas de Información (Cliente / Envío)
-  const cardY = 44;
-  const cardW = 133;
-  const cardH = 38;
-
-  // Tarjeta Cliente
-  doc.setFillColor(...COLOR_LIGHT_BG);
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(margin, cardY, cardW, cardH, 2, 2, "FD");
-
-  doc.setFillColor(...COLOR_PRIMARY);
-  doc.rect(margin, cardY, 3, cardH, "F");
-
-  doc.setTextColor(...COLOR_PRIMARY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.text("INFORMACIÓN DEL CLIENTE", margin + 7, cardY + 6);
+  const companyPhone = text(company.phone, "+56 9 9002 0089");
+  const companyEmail = text(company.email, "administracion@tostadoresfica.cl");
+  const companyGiro = text(company.giro, "Reparación y mantención de maq.");
+  const companyBank = text(company.bankName, "BANCO SCOTIABANK");
+  const companyAccount = text(company.bankAccount, "CUENTA CORRIENTE 979706529");
 
   const clientName = text(item.clientName, "Sin cliente registrado");
-  const shipping = item.shipping && typeof item.shipping === "object"
-    ? item.shipping as Record<string, unknown>
-    : {};
+  const clientRut = text(item.clientRut, "N/A");
+  const clientPhone = text(item.clientPhone, "N/A");
+  const clientEmail = text(item.clientEmail, "N/A");
+  const clientAddress = text(item.clientAddress, "Por acordar con el cliente");
+  const clientComuna = comunaFrom(clientAddress) || text(item.clientComuna, "N/A");
 
-  doc.setFontSize(8);
-  doc.setTextColor(...COLOR_TEXT_DARK);
-  doc.setFont("helvetica", "bold");
-  doc.text("Nombre / Razón Social:", margin + 7, cardY + 13);
-  doc.setFont("helvetica", "normal");
-  doc.text(clientName.slice(0, 42), margin + 44, cardY + 13);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("RUT / DNI / Tax ID:", margin + 7, cardY + 19);
-  doc.setFont("helvetica", "normal");
-  doc.text(text(item.clientTaxId, "N/A"), margin + 44, cardY + 19);
+  // ── 1. Encabezado: logo + nombre empresa (izquierda) / COTIZACIÓN (derecha) ──
+  const logo = await imageDataUrl("/assets/logo.webp");
+  let headerTextX = margin;
+  if (logo) {
+    doc.addImage(logo, "PNG", margin, 10, 20, 20);
+    headerTextX = margin + 24;
+  }
 
   doc.setFont("helvetica", "bold");
-  doc.text("Contacto / Email:", margin + 7, cardY + 25);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${text(item.clientEmail)} · ${text(item.clientPhone)}`.slice(0, 45), margin + 44, cardY + 25);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("Dirección / País:", margin + 7, cardY + 31);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${text(shipping.address ?? item.clientAddress)}, ${text(item.clientCountry)}`.slice(0, 45), margin + 44, cardY + 31);
-
-  // Tarjeta Logística y Envío
-  const card2X = margin + cardW + 7;
-  doc.setFillColor(...COLOR_LIGHT_BG);
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.roundedRect(card2X, cardY, cardW, cardH, 2, 2, "FD");
-
-  doc.setFillColor(...COLOR_DARK);
-  doc.rect(card2X, cardY, 3, cardH, "F");
-
   doc.setTextColor(...COLOR_DARK);
+  doc.setFontSize(13);
+  doc.text(companyName.toUpperCase().slice(0, 40), headerTextX, 18);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...COLOR_TEXT_MUTED);
+  doc.text(`RUT: ${companyTaxId}`, headerTextX, 23.5);
+  doc.text(`GIRO: ${companyGiro}`.slice(0, 52), headerTextX, 27.5);
+  doc.text(`DIRECCIÓN: ${companyAddress}`.slice(0, 58), headerTextX, 31.5);
+
+  // Banner COTIZACIÓN
+  const docLabel = "COTIZACIÓN";
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.text("DATOS DE RUTA Y LOGÍSTICA DE ENVÍO", card2X + 7, cardY + 6);
+  doc.setFontSize(22);
+  doc.setTextColor(...COLOR_PRIMARY);
+  doc.text(docLabel, pageWidth - margin, 20, { align: "right" });
 
   doc.setFontSize(8);
+  doc.setTextColor(...COLOR_DARK);
+  doc.text(`Nº ${text(item.id).slice(0, 16)}`, pageWidth - margin, 27, { align: "right" });
+  doc.text(`FECHA EMISIÓN: ${dateLabel()}`, pageWidth - margin, 31.5, { align: "right" });
+  doc.text("VALIDEZ: 15 DÍAS", pageWidth - margin, 35.5, { align: "right" });
+
+  doc.setDrawColor(...COLOR_PRIMARY);
+  doc.setLineWidth(0.5);
+  doc.line(margin, 39, pageWidth - margin, 39);
+
+  // ── 2. Bloques: DATOS EMPRESA / CUENTA BANCARIA ──
+  const blockY = 43;
+  const blockH = 34;
+  const blockW = (pageWidth - margin * 2 - 6) / 2;
+
+  const drawEmpresaBlock = (x: number, title: string, lines: string[]) => {
+    doc.setFillColor(...COLOR_LIGHT_BG);
+    doc.setDrawColor(...COLOR_BORDER);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, blockY, blockW, blockH, 2, 2, "FD");
+
+    doc.setFillColor(...COLOR_DARK);
+    doc.rect(x, blockY, 2.5, blockH, "F");
+
+    doc.setTextColor(...COLOR_DARK);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(title, x + 6, blockY + 6);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...COLOR_TEXT_DARK);
+    lines.slice(0, 4).forEach((line, index) => {
+      doc.text(line.slice(0, 48), x + 6, blockY + 12.5 + index * 5.5);
+    });
+  };
+
+  drawEmpresaBlock(margin, "DATOS EMPRESA:", [
+    companyName.toUpperCase(),
+    `RUT: ${companyTaxId}`,
+    `GIRO: ${companyGiro}`,
+    `CASA MATRIZ: ${companyAddress}`,
+  ]);
+
+  drawEmpresaBlock(margin + blockW + 6, "CUENTA BANCARIA:", [
+    companyName.toUpperCase(),
+    `RUT ${companyTaxId}`,
+    companyBank.toUpperCase(),
+    companyAccount.toUpperCase(),
+  ]);
+
+  // ── 3. Datos del Cliente ──
+  const clientY = blockY + blockH + 6;
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(...COLOR_BORDER);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, clientY, pageWidth - margin * 2, 30, 2, 2, "FD");
+
+  doc.setFillColor(...COLOR_PRIMARY);
+  doc.rect(margin, clientY, 2.5, 30, "F");
+
+  doc.setTextColor(...COLOR_PRIMARY);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("DATOS DEL CLIENTE", margin + 6, clientY + 6);
+
+  const clientLeftX = margin + 6;
+  const clientRightX = pageWidth / 2 + 6;
+
   doc.setTextColor(...COLOR_TEXT_DARK);
-  doc.setFont("helvetica", "bold");
-  doc.text("Origen de Carga:", card2X + 7, cardY + 13);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${text(shipping.origin, companyAddress)} (ZIP: ${text(shipping.originZip, company.zip)})`, card2X + 38, cardY + 13);
+  doc.setFontSize(8);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Destino de Entrega:", card2X + 7, cardY + 19);
+  doc.text("NOMBRE:", clientLeftX, clientY + 12.5);
   doc.setFont("helvetica", "normal");
-  doc.text(`${text(shipping.destination, "Por acordar con cliente")} (ZIP: ${text(shipping.destinationZip, "N/A")})`, card2X + 38, cardY + 19);
+  doc.text(clientName.slice(0, 40), clientLeftX + 20, clientY + 12.5);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Modalidad Despacho:", card2X + 7, cardY + 25);
+  doc.text("DIRECCIÓN:", clientLeftX, clientY + 18.5);
   doc.setFont("helvetica", "normal");
-  doc.text("Flete Terrestre / Marítimo Internacional", card2X + 38, cardY + 25);
+  doc.text(clientAddress.slice(0, 48), clientLeftX + 20, clientY + 18.5);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Estado de Solicitud:", card2X + 7, cardY + 31);
+  doc.text("E-MAIL:", clientLeftX, clientY + 24.5);
   doc.setFont("helvetica", "normal");
-  doc.text(text(item.estado, "Aprobada para Producción").toUpperCase(), card2X + 38, cardY + 31);
+  doc.text(clientEmail.slice(0, 44), clientLeftX + 20, clientY + 24.5);
 
-  // 3. Tabla de Productos
-  const tableY = 86;
-  const colX = [margin, 46, 172, 205, 237];
-  const colW = [34, 126, 33, 32, 48];
+  doc.setFont("helvetica", "bold");
+  doc.text("RUT:", clientRightX, clientY + 12.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(clientRut.slice(0, 20), clientRightX + 12, clientY + 12.5);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("COMUNA:", clientRightX, clientY + 18.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(clientComuna.slice(0, 30), clientRightX + 20, clientY + 18.5);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("TELÉFONO:", clientRightX, clientY + 24.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(clientPhone.slice(0, 24), clientRightX + 20, clientY + 24.5);
+
+  // ── 4. Tabla de Productos ──
+  const tableY = clientY + 36;
+  const colX = [margin, 102, 126, 150, 162];
+  const colW = [88, 24, 24, 12, 34];
   const tableW = pageWidth - margin * 2;
 
-  // Cabecera Tabla
   doc.setFillColor(...COLOR_DARK);
   doc.roundedRect(margin, tableY, tableW, 8, 1, 1, "F");
   doc.setTextColor(...COLOR_WHITE);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
 
-  doc.text("CÓDIGO", colX[0] + 3, tableY + 5.5);
-  doc.text("DESCRIPCIÓN DEL PRODUCTO", colX[1] + 3, tableY + 5.5);
-  doc.text("PRECIO UNIT.", colX[2] + colW[2] - 3, tableY + 5.5, { align: "right" });
+  doc.text("PRODUCTO", colX[0] + 3, tableY + 5.5);
+  doc.text("CÓDIGO", colX[1] + 3, tableY + 5.5);
+  doc.text("VALOR UNIDAD", colX[2] + colW[2] - 3, tableY + 5.5, { align: "right" });
   doc.text("CANTIDAD", colX[3] + colW[3] / 2, tableY + 5.5, { align: "center" });
-  doc.text("TOTAL CLP", colX[4] + colW[4] - 3, tableY + 5.5, { align: "right" });
+  doc.text("VALOR TOTAL NETO", colX[4] + colW[4] - 3, tableY + 5.5, { align: "right" });
 
-  // Filas Tabla
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...COLOR_TEXT_DARK);
 
   const displayRows = products.length > 0
     ? products
-    : [{ code: "FT-GEN", name: "Servicio de Fabricación de Maquinaria", quantity: 1, unitPrice: subtotal || 0 }];
+    : [{ code: "FT-GEN", name: "Servicio de Fabricación de Maquinaria", quantity: 1, unitPrice: neto || 0 }];
 
-  displayRows.slice(0, 5).forEach((product, index) => {
+  displayRows.slice(0, 8).forEach((product, index) => {
     const rowY = tableY + 8 + index * 9;
     const bg: RGB = index % 2 === 0 ? COLOR_WHITE : COLOR_LIGHT_BG;
 
     doc.setFillColor(...bg);
     doc.rect(margin, rowY, tableW, 9, "F");
     doc.setDrawColor(...COLOR_BORDER);
+    doc.setLineWidth(0.2);
     doc.line(margin, rowY + 9, margin + tableW, rowY + 9);
 
-    doc.text(product.code.slice(0, 16), colX[0] + 3, rowY + 6);
-    doc.text(product.name.slice(0, 56), colX[1] + 3, rowY + 6);
-    doc.text(money(product.unitPrice), colX[2] + colW[2] - 3, rowY + 6, { align: "right" });
+    doc.text(product.name.slice(0, 54), colX[0] + 3, rowY + 6);
+    doc.text(product.code.slice(0, 14), colX[1] + 3, rowY + 6);
+    doc.text(moneyCLP(product.unitPrice), colX[2] + colW[2] - 3, rowY + 6, { align: "right" });
     doc.text(String(product.quantity), colX[3] + colW[3] / 2, rowY + 6, { align: "center" });
     doc.setFont("helvetica", "bold");
-    doc.text(money(product.unitPrice * product.quantity), colX[4] + colW[4] - 3, rowY + 6, { align: "right" });
+    doc.text(moneyCLP(product.unitPrice * product.quantity), colX[4] + colW[4] - 3, rowY + 6, { align: "right" });
     doc.setFont("helvetica", "normal");
   });
 
-  // 4. Bloque Inferior: Observaciones + Totales
-  const summaryY = tableY + 8 + Math.min(displayRows.length, 5) * 9 + 4;
-  const obsW = 160;
-  const totalsW = tableW - obsW - 6;
-  const totalsX = margin + obsW + 6;
-
-  // Box Observaciones
-  doc.setFillColor(...COLOR_LIGHT_BG);
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.roundedRect(margin, summaryY, obsW, 26, 2, 2, "FD");
-
-  doc.setTextColor(...COLOR_PRIMARY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("OBSERVACIONES Y NOTAS DE FABRICACIÓN:", margin + 4, summaryY + 6);
-  doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.setFont("helvetica", "normal");
-  doc.text(text(item.message, "Sin observaciones adicionales registradas para este pedido."), margin + 4, summaryY + 12, { maxWidth: obsW - 8 });
-
-  // Tabla Totales
+  // ── 5. Totales: NETO / IVA / TOTAL ──
+  const totalsY = tableY + 8 + Math.min(displayRows.length, 8) * 9 + 4;
+  const totalsW = 52;
+  const totalsX = pageWidth - margin - totalsW;
   const tRowH = 8;
 
-  // Subtotal
   doc.setFillColor(...COLOR_WHITE);
-  doc.rect(totalsX, summaryY, totalsW, tRowH, "FD");
-  doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.setFont("helvetica", "bold");
+  doc.setDrawColor(...COLOR_BORDER);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(totalsX, totalsY, totalsW, tRowH * 2 + 9, 1, 1, "FD");
+
   doc.setFontSize(8);
-  doc.text("SUBTOTAL:", totalsX + 4, summaryY + 5.5);
-  doc.setTextColor(...COLOR_TEXT_DARK);
-  doc.text(money(subtotal), totalsX + totalsW - 4, summaryY + 5.5, { align: "right" });
-
-  // Descuento
-  doc.setFillColor(...COLOR_LIGHT_BG);
-  doc.rect(totalsX, summaryY + tRowH, totalsW, tRowH, "FD");
+  doc.setFont("helvetica", "bold");
   doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.text("DESCUENTO:", totalsX + 4, summaryY + tRowH + 5.5);
+  doc.text("NETO", totalsX + 4, totalsY + 5.5);
   doc.setTextColor(...COLOR_TEXT_DARK);
-  doc.text(money(0), totalsX + totalsW - 4, summaryY + tRowH + 5.5, { align: "right" });
+  doc.text(moneyCLP(neto), totalsX + totalsW - 4, totalsY + 5.5, { align: "right" });
 
-  // Total PAGO
+  doc.setTextColor(...COLOR_TEXT_MUTED);
+  doc.text("IVA 19%", totalsX + 4, totalsY + tRowH + 5.5);
+  doc.setTextColor(...COLOR_TEXT_DARK);
+  doc.text(moneyCLP(iva), totalsX + totalsW - 4, totalsY + tRowH + 5.5, { align: "right" });
+
   doc.setFillColor(...COLOR_PRIMARY);
-  doc.roundedRect(totalsX, summaryY + tRowH * 2, totalsW, tRowH + 2, 1, 1, "F");
+  doc.roundedRect(totalsX, totalsY + tRowH * 2, totalsW, 9, 1, 1, "F");
   doc.setTextColor(...COLOR_WHITE);
   doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.text("TOTAL FINAL CLP:", totalsX + 4, summaryY + tRowH * 2 + 6.5);
-  doc.text(money(subtotal), totalsX + totalsW - 4, summaryY + tRowH * 2 + 6.5, { align: "right" });
+  doc.text("TOTAL", totalsX + 4, totalsY + tRowH * 2 + 6);
+  doc.text(moneyCLP(total), totalsX + totalsW - 4, totalsY + tRowH * 2 + 6, { align: "right" });
 
-  // 5. Garantía & Términos
-  const termsY = summaryY + 30;
-  const termsW = tableW;
-  doc.setFillColor(255, 246, 240);
-  doc.setDrawColor(...COLOR_PRIMARY);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(margin, termsY, termsW, 16, 2, 2, "FD");
+  // ── 6. Dirección y Observación ──
+  const notesY = totalsY + 30;
+  const notesH = 22;
+  doc.setFillColor(...COLOR_LIGHT_BG);
+  doc.setDrawColor(...COLOR_BORDER);
+  doc.roundedRect(margin, notesY, pageWidth - margin * 2, notesH, 2, 2, "FD");
 
-  doc.setTextColor(...COLOR_PRIMARY);
+  doc.setTextColor(...COLOR_DARK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("TÉRMINOS Y CONDICIONES DE FABRICACIÓN Y GARANTÍA", margin + 6, termsY + 5);
-
-  doc.setTextColor(...COLOR_TEXT_DARK);
+  doc.text("DIRECCIÓN:", margin + 4, notesY + 6);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text("• 1 AÑO DE GARANTÍA OFICIAL: Cobertura total de fábrica con soporte técnico y disponibilidad de repuestos.", margin + 6, termsY + 10);
-  doc.text("• TIEMPO DE PRODUCCIÓN: 25 días hábiles de fabricación (margen de ±5 días según requerimientos especiales).", margin + 6, termsY + 13.5);
-  doc.text("• ADUANA Y ARANCELES: Los valores no incluyen costos de impuestos o tramitación aduanera fuera de Chile.", margin + 140, termsY + 10);
+  doc.setTextColor(...COLOR_TEXT_MUTED);
+  doc.text(clientAddress.slice(0, 70), margin + 4, notesY + 11);
 
-  // 6. Footer de la Empresa
-  const footerY = pageHeight - 15;
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLOR_DARK);
+  doc.text("OBSERVACIÓN:", margin + 4, notesY + 16);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLOR_TEXT_MUTED);
+  doc.text(
+    text(item.message, "Sin observaciones adicionales registradas.").slice(0, 76),
+    margin + 4,
+    notesY + 21,
+  );
+
+  // ── 7. Nota de plazos ──
+  const noteY = notesY + notesH + 6;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(8);
+  doc.setTextColor(...COLOR_TEXT_MUTED);
+  doc.text(
+    "LA FÁBRICA POSEE PLAZOS DE ENTREGA DE 20-25 DÍAS QUE PUEDEN VARIAR 5 DÍAS HÁBILES, EN CONSECUENCIA DE LOS PLAZOS DE ENTREGA DE COMPONENTES ESPECIALES DE PROVEEDORES NACIONALES E INTERNACIONALES.",
+    margin,
+    noteY,
+    { maxWidth: pageWidth - margin * 2 },
+  );
+
+  // ── 8. Footer ──
+  const footerY = pageHeight - 13;
   doc.setFillColor(...COLOR_DARK);
-  doc.rect(0, footerY, pageWidth, 15, "F");
+  doc.rect(0, footerY, pageWidth, 13, "F");
 
   doc.setTextColor(...COLOR_WHITE);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text(`${companyName.toUpperCase()}  ·  RUT: ${text(company?.taxId, "76.683.592-9")}`.slice(0, 62), margin, footerY + 6);
+  doc.text(`${companyName.toUpperCase()}  ·  RUT: ${companyTaxId}`.slice(0, 48), margin, footerY + 5.5);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.text(`Casa Matriz: ${companyAddress}  |  Tel: ${companyPhone}`.slice(0, 80), margin, footerY + 10.5);
+  doc.text(`Casa Matriz: ${companyAddress}  |  Tel: ${companyPhone}`.slice(0, 74), margin, footerY + 10);
 
   doc.setFont("helvetica", "bold");
-  doc.text("FORMAS DE PAGO:", pageWidth - margin - 85, footerY + 6);
+  doc.text("CONTACTO:", pageWidth - margin - 72, footerY + 5.5);
   doc.setFont("helvetica", "normal");
-  doc.text("Transferencia Remesa · PayPal · Efectivo", pageWidth - margin - 85, footerY + 10.5);
+  doc.text(`${companyEmail}`.slice(0, 34), pageWidth - margin - 72, footerY + 10);
 
   const blob = doc.output("blob");
-  const fileName = `OT-${text(item.id, "sin-numero")}.pdf`;
+  const fileName = `COT-${text(item.id, "sin-numero")}.pdf`;
   const url = URL.createObjectURL(blob);
 
   return { blob, fileName, url, item };

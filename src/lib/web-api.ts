@@ -201,3 +201,65 @@ export async function fetchSolicitudes(
     );
   }
 }
+
+export interface RegistroOrdenTrabajoPayload {
+  clientName: string;
+  clientPhone?: string;
+  clientRut?: string;
+  clientEmail?: string;
+  clientComuna?: string;
+  clientAddress?: string;
+  message?: string;
+  shipping?: Record<string, unknown> | null;
+  products: Array<{
+    productId?: string;
+    name?: string;
+    quantity: number;
+    unitPrice?: number;
+  }>;
+}
+
+export interface RegistroOrdenTrabajoResponse {
+  ok: boolean;
+  id: string;
+  estado: string;
+}
+
+/**
+ * Registra una cotización como orden de trabajo (OT) en Firestore, vía la API
+ * protegida de la web. La OT queda con estado "aprobada_ot" y enOT: true.
+ */
+export async function registrarOrdenTrabajo(
+  payload: RegistroOrdenTrabajoPayload,
+): Promise<ApiResult<RegistroOrdenTrabajoResponse>> {
+  const { webUrl } = getConfig();
+
+  if (!webUrl) {
+    return fail(null, 0, "VITE_WEB_API_URL no definida en .env");
+  }
+
+  const started = performance.now();
+
+  try {
+    const res = await fetch(`${webUrl}/api/electron/solicitudes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(payload),
+    });
+    const latencyMs = Math.round(performance.now() - started);
+
+    if (res.ok) {
+      const data = (await res.json()) as RegistroOrdenTrabajoResponse;
+      return ok(res.status, latencyMs, data);
+    }
+
+    const apiError = await readApiError(res);
+    return fail(res.status, latencyMs, apiError ?? `HTTP ${res.status}`);
+  } catch (error) {
+    return fail(
+      null,
+      Math.round(performance.now() - started),
+      `Sin respuesta (${errorMessage(error)})`,
+    );
+  }
+}

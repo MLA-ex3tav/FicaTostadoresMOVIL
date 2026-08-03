@@ -3,7 +3,6 @@ import { Sun, Moon } from "lucide-react";
 import type { ViewId } from "./types";
 import { BottomNav } from "./components/BottomNav";
 import { ToastHost } from "./components/ToastHost";
-import { PdfViewerHost } from "./components/PdfViewerHost";
 import { CotizacionesScreen } from "./screens/CotizacionesScreen";
 import { NuevaCotizacionScreen } from "./screens/NuevaCotizacionScreen";
 import { EmpresaScreen } from "./screens/EmpresaScreen";
@@ -96,7 +95,6 @@ export function App() {
 
       <BottomNav active={view} onChange={setView} />
       <ToastHost />
-      <PdfViewerHost />
     </div>
   );
 }

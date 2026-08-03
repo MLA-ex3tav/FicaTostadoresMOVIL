@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Package, RefreshCw, Search, X } from "lucide-react";
+import { CloudUpload, Package, RefreshCw, Search, X } from "lucide-react";
 import {
   getPrecioLocal,
   loadCatalogo,
   setPrecioLocal,
+  syncAllPreciosToServer,
   type ProductoCatalogo,
 } from "../services/catalog";
 import { showToast } from "../ui/toast";
@@ -24,6 +25,7 @@ export function ProductosScreen() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ProductoCatalogo | null>(null);
   const [precioEdit, setPrecioEdit] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
@@ -41,6 +43,34 @@ export function ProductosScreen() {
   useEffect(() => {
     void cargar();
   }, []);
+
+  const subirPrecios = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncAllPreciosToServer();
+      if (result.ok) {
+        showToast({
+          title: "Precios sincronizados",
+          message: `${result.total} precio(s) subidos a Firebase. Cualquier instalación los tendrá.`,
+          tone: "success",
+        });
+      } else {
+        showToast({
+          title: "Sincronización parcial",
+          message: `${result.total - result.failed.length} de ${result.total} subidos. Error de ejemplo: ${result.failed[0]?.reason ?? "desconocido"}.`,
+          tone: "warning",
+        });
+      }
+    } catch (err) {
+      showToast({
+        title: "No se pudieron subir los precios",
+        message: err instanceof Error ? err.message : String(err),
+        tone: "error",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const list = productos ?? [];
@@ -65,7 +95,7 @@ export function ProductosScreen() {
     setSelected(null);
     showToast({
       title: "Precio actualizado",
-      message: `Precio local de ${selected.name ?? selected.modelo ?? "producto"} guardado (${formatPrecio(price)}).`,
+      message: `Precio de ${selected.name ?? selected.modelo ?? "producto"} guardado y sincronizado (${formatPrecio(price)}).`,
       tone: "success",
     });
   };
@@ -77,15 +107,27 @@ export function ProductosScreen() {
           <h1 className="view__title">Productos</h1>
           <p className="view__subtitle">Catálogo de tostadoras y accesorios</p>
         </div>
-        <button
-          className="btn btn--secondary btn--icon"
-          type="button"
-          onClick={() => void cargar()}
-          disabled={loading}
-          aria-label="Actualizar catálogo"
-        >
-          <RefreshCw size={16} className={loading ? "spin" : ""} />
-        </button>
+        <div className="view__header__actions">
+          <button
+            className="btn btn--secondary btn--icon"
+            type="button"
+            onClick={() => void subirPrecios()}
+            disabled={syncing}
+            aria-label="Subir todos los precios a Firebase"
+            title="Subir todos los precios a Firebase"
+          >
+            <CloudUpload size={16} className={syncing ? "spin" : ""} />
+          </button>
+          <button
+            className="btn btn--secondary btn--icon"
+            type="button"
+            onClick={() => void cargar()}
+            disabled={loading}
+            aria-label="Actualizar catálogo"
+          >
+            <RefreshCw size={16} className={loading ? "spin" : ""} />
+          </button>
+        </div>
       </div>
 
       <div className="search-field">
@@ -192,8 +234,8 @@ export function ProductosScreen() {
                   }}
                 />
                 <span className="modal__hint">
-                  {formatPrecio(Math.max(0, Number(precioEdit) || 0))} · Precio local de esta app,
-                  no modifica la web.
+                  {formatPrecio(Math.max(0, Number(precioEdit) || 0))} · Se sincroniza con
+                  Firebase: quedará disponible para cualquier instalación.
                 </span>
               </div>
               <div className="modal__actions">

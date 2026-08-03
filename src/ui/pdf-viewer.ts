@@ -1,45 +1,19 @@
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import type { CotizacionPdf } from "../services/cotizacion-pdf";
 
-type PdfViewerListener = (pdf: CotizacionPdf | null) => void;
-
-let activePdf: CotizacionPdf | null = null;
-let currentUrl: string | null = null;
-const listeners = new Set<PdfViewerListener>();
-
-function emit(): void {
-  listeners.forEach((listener) => listener(activePdf));
-}
-
-export function subscribePdfViewer(listener: PdfViewerListener): () => void {
-  listeners.add(listener);
-  listener(activePdf);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-/** Libera la URL temporal del PDF activo si existe. */
-function revokeIfNeeded(): void {
-  if (currentUrl) {
-    URL.revokeObjectURL(currentUrl);
-    currentUrl = null;
+/** Abre el PDF en el navegador del sistema (nativo) o en una pestaña (web). */
+export async function openPdfViewer(pdf: CotizacionPdf): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    await Browser.open({ url: pdf.url, presentationStyle: "fullscreen" });
+  } else {
+    window.open(pdf.url, "_blank", "noopener,noreferrer");
   }
 }
 
-/** Cierra el visor PDF y libera la URL temporal. */
+/** Cierra (no-op mantenido por compatibilidad con la API anterior). */
 export function closePdfViewer(): void {
-  if (!activePdf) return;
-  revokeIfNeeded();
-  activePdf = null;
-  emit();
-}
-
-/** Abre el PDF generado en el visor integrado (compatible con la API heredada). */
-export function openPdfViewer(pdf: CotizacionPdf): void {
-  closePdfViewer();
-  currentUrl = pdf.url;
-  activePdf = pdf;
-  emit();
+  // No hay visor integrado: la navegación externa no necesita cerrarse.
 }
 
 export { liberarPdf } from "../services/cotizacion-pdf";

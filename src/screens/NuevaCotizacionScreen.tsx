@@ -5,7 +5,6 @@ import {
   Check,
   FileText,
   Mail,
-  MessageCircle,
   Minus,
   Package,
   Plus,
@@ -19,13 +18,13 @@ import {
   type ProductoCatalogo,
 } from "../services/catalog";
 import { generarCotizacionPdf, type CotizacionPdf } from "../services/cotizacion-pdf";
-import type { SolicitudRemota } from "../lib/web-api";
-import { openPdfViewer } from "../ui/pdf-viewer";
+import { registrarOrdenTrabajo, type SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
 import { abrirGmail, abrirWhatsApp, compartirPdf, descargarPdf } from "../lib/share";
 import { getCompanyData } from "../lib/company";
 import { suggestAddresses } from "../lib/geo";
 import { EmptyState } from "../components/EmptyState";
+import { WhatsAppIcon } from "../components/WhatsAppIcon";
 
 interface ItemSeleccionado {
   product: ProductoCatalogo;
@@ -87,10 +86,11 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   const [seleccion, setSeleccion] = useState<Record<string, ItemSeleccionado>>({});
   const [cliente, setCliente] = useState({
     name: "",
-    taxId: "",
-    email: "",
     phone: "",
     address: "",
+    rut: "",
+    email: "",
+    comuna: "",
   });
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -117,7 +117,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   }, []);
 
   const filtered = useMemo(() => {
-    const list = productos ?? [];
+    const list = (productos ?? []).filter((product) => !seleccion[product.id]);
     const term = query.trim().toLowerCase();
     if (!term) return list;
     return list.filter((product) =>
@@ -125,7 +125,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
         .toLowerCase()
         .includes(term),
     );
-  }, [productos, query]);
+  }, [productos, query, seleccion]);
 
   const items = Object.values(seleccion);
   const totalProductos = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -137,8 +137,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   const addressSuggestions = useMemo(() => {
     const value = cliente.address.trim();
     if (!value || !addressFocused) return [];
-    const lastPart = value.split(",").pop() ?? "";
-    return suggestAddresses(lastPart, "Chile");
+    return suggestAddresses(value, "Chile");
   }, [cliente.address, addressFocused]);
 
   const seleccionarDireccion = (label: string) => {
@@ -184,10 +183,11 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     setSeleccion({});
     setCliente({
       name: "",
-      taxId: "",
-      email: "",
       phone: "",
       address: "",
+      rut: "",
+      email: "",
+      comuna: "",
     });
     setMessage("");
     setResultado(null);
@@ -226,12 +226,20 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
         ? [company.address, company.city, company.region].filter(Boolean).join(", ") || company.country
         : "Padre Las Casas, Chile";
 
+      const productsPayload = items.map(({ product, quantity }) => ({
+        productId: product.id,
+        name: product.name ?? product.modelo ?? "Producto",
+        quantity,
+        unitPrice: getPrecioLocal(product),
+      }));
+
       const item: SolicitudRemota = {
         id: `COT-${Date.now().toString().slice(-6)}`,
         clientName: cliente.name.trim(),
-        clientTaxId: cliente.taxId.trim(),
-        clientEmail: cliente.email.trim(),
         clientPhone: cliente.phone.trim(),
+        clientRut: cliente.rut.trim(),
+        clientEmail: cliente.email.trim(),
+        clientComuna: cliente.comuna.trim(),
         clientCountry: "Chile",
         clientAddress: direccionCompleta,
         shipping: {
@@ -239,18 +247,48 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
           originZip: company.zip ?? "",
           destination: destino,
         },
-        products: items.map(({ product, quantity }) => ({
-          productId: product.id,
-          name: product.name ?? product.modelo ?? "Producto",
-          quantity,
-        })),
+        products: productsPayload,
         message: message.trim(),
         estado: "pendiente",
       };
 
+      const registro = await registrarOrdenTrabajo({
+        clientName: cliente.name.trim(),
+        clientPhone: cliente.phone.trim(),
+        clientRut: cliente.rut.trim(),
+        clientEmail: cliente.email.trim(),
+        clientComuna: cliente.comuna.trim(),
+        clientAddress: direccionCompleta,
+        message: message.trim(),
+        shipping: {
+          origin: origen,
+          originZip: company.zip ?? "",
+          destination: destino,
+        },
+        products: productsPayload,
+      });
+
+      if (registro.ok && registro.data) {
+        item.id = registro.data.id;
+        item.estado = registro.data.estado;
+      }
+
       const pdf = await generarCotizacionPdf(item);
       setResultado(pdf);
-      openPdfViewer(pdf);
+
+      if (registro.ok && registro.data) {
+        showToast({
+          title: "Orden de trabajo registrada",
+          message: `La OT ${registro.data.id} quedó guardada y aparece en Órdenes de Trabajo.`,
+          tone: "success",
+        });
+      } else {
+        showToast({
+          title: "PDF generado sin registrar",
+          message: `No se pudo registrar la OT en la web (${registro.error ?? "desconocido"}). El PDF se generó igual.`,
+          tone: "warning",
+        });
+      }
     } catch (error) {
       console.error("Error al generar cotización:", error);
       showToast({
@@ -314,18 +352,31 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                 />
               </div>
               <div className="form-field">
-                <label className="form-label" htmlFor="nc-tax">RUT / Tax ID</label>
+                <label className="form-label" htmlFor="nc-phone">Teléfono</label>
                 <input
-                  id="nc-tax"
+                  id="nc-phone"
                   className="form-input"
-                  type="text"
-                  value={cliente.taxId}
-                  onChange={(event) => setCliente({ ...cliente, taxId: event.target.value })}
-                  placeholder="Ej. 12.345.678-9"
+                  type="tel"
+                  inputMode="tel"
+                  value={cliente.phone}
+                  onChange={(event) => setCliente({ ...cliente, phone: event.target.value })}
+                  placeholder="+56 9 1234 5678"
                 />
               </div>
               <div className="form-field">
-                <label className="form-label" htmlFor="nc-email">Email</label>
+                <label className="form-label" htmlFor="nc-rut">RUT</label>
+                <input
+                  id="nc-rut"
+                  className="form-input"
+                  type="text"
+                  inputMode="text"
+                  value={cliente.rut}
+                  onChange={(event) => setCliente({ ...cliente, rut: event.target.value })}
+                  placeholder="12.345.678-9"
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="nc-email">E-mail</label>
                 <input
                   id="nc-email"
                   className="form-input"
@@ -337,15 +388,14 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                 />
               </div>
               <div className="form-field">
-                <label className="form-label" htmlFor="nc-phone">Teléfono</label>
+                <label className="form-label" htmlFor="nc-comuna">Comuna</label>
                 <input
-                  id="nc-phone"
+                  id="nc-comuna"
                   className="form-input"
-                  type="tel"
-                  inputMode="tel"
-                  value={cliente.phone}
-                  onChange={(event) => setCliente({ ...cliente, phone: event.target.value })}
-                  placeholder="+56 9 1234 5678"
+                  type="text"
+                  value={cliente.comuna}
+                  onChange={(event) => setCliente({ ...cliente, comuna: event.target.value })}
+                  placeholder="Padre Las Casas"
                 />
               </div>
               <div className="form-field form-field--wide">
@@ -493,38 +543,25 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               <EmptyState title="Sin resultados" text={`No se encontraron productos para "${query}".`} />
             ) : (
               <ul className="card-list">
-                {filtered.map((product) => {
-                  const yaSeleccionado = Boolean(seleccion[product.id]);
-                  return (
-                    <li key={product.id} className="card-list__item card-list__item--tap">
-                      <button
-                        type="button"
-                        className="card-list__btn"
-                        onClick={() => (yaSeleccionado ? eliminar(product.id) : agregar(product))}
-                      >
-                        <div className="card-list__top">
-                          <div className="card-list__title">
-                            {String(product.name ?? product.modelo ?? "Sin nombre")}
-                          </div>
-                          {yaSeleccionado ? (
-                            <span className="btn btn--success btn--sm">
-                              <Check size={14} /> {seleccion[product.id].quantity}
-                            </span>
-                          ) : (
-                            <span className="btn btn--primary btn--sm">
-                              <Plus size={14} /> Agregar
-                            </span>
-                          )}
+                {filtered.map((product) => (
+                  <li key={product.id} className="card-list__item card-list__item--tap">
+                    <button type="button" className="card-list__btn" onClick={() => agregar(product)}>
+                      <div className="card-list__top">
+                        <div className="card-list__title">
+                          {String(product.name ?? product.modelo ?? "Sin nombre")}
                         </div>
-                        <div className="card-list__meta">
-                          {product.modelo ? String(product.modelo) : "—"} ·{" "}
-                          {String(product.categoria ?? product.category ?? "—")}
-                        </div>
-                        <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
-                      </button>
-                    </li>
-                  );
-                })}
+                        <span className="btn btn--primary btn--sm">
+                          <Plus size={14} /> Agregar
+                        </span>
+                      </div>
+                      <div className="card-list__meta">
+                        {product.modelo ? String(product.modelo) : "—"} ·{" "}
+                        {String(product.categoria ?? product.category ?? "—")}
+                      </div>
+                      <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
           </section>
@@ -543,8 +580,20 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                 <strong>{cliente.name || "—"}</strong>
               </div>
               <div className="wizard-summary__row">
+                <span>RUT</span>
+                <strong>{cliente.rut || "—"}</strong>
+              </div>
+              <div className="wizard-summary__row">
+                <span>E-mail</span>
+                <strong>{cliente.email || "—"}</strong>
+              </div>
+              <div className="wizard-summary__row">
                 <span>Dirección</span>
                 <strong>{cliente.address || "—"}</strong>
+              </div>
+              <div className="wizard-summary__row">
+                <span>Comuna</span>
+                <strong>{cliente.comuna || "—"}</strong>
               </div>
               <div className="wizard-summary__row">
                 <span>Productos</span>
@@ -578,13 +627,13 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   <button type="button" className="btn btn--success" onClick={() => void compartir()}>
                     <Share2 size={16} /> Compartir
                   </button>
-                  <button type="button" className="btn btn--primary" onClick={() => abrirWhatsApp(resultado)}>
-                    <MessageCircle size={16} /> WhatsApp
+                  <button type="button" className="btn btn--whatsapp" onClick={() => void abrirWhatsApp(resultado)}>
+                    <WhatsAppIcon size={16} /> WhatsApp
                   </button>
-                  <button type="button" className="btn btn--info" onClick={() => abrirGmail(resultado)}>
+                  <button type="button" className="btn btn--info" onClick={() => void abrirGmail(resultado)}>
                     <Mail size={16} /> Gmail
                   </button>
-                  <button type="button" className="btn btn--secondary" onClick={() => descargarPdf(resultado)}>
+                  <button type="button" className="btn btn--secondary" onClick={() => void descargarPdf(resultado)}>
                     <Package size={16} /> Descargar
                   </button>
                 </div>

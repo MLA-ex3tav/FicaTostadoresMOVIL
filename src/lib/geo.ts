@@ -78,6 +78,36 @@ export interface AddressSuggestion {
   label: string;
 }
 
+/** Calles conocidas de la zona (Temuco / Padre Las Casas) para autocompletar. */
+const STREETS: Array<{ street: string; city: string; region: string }> = [
+  { street: "Mac Iver", city: "Temuco", region: "La Araucanía" },
+  { street: "San Ramón", city: "Padre Las Casas", region: "La Araucanía" },
+  { street: "Av. San Ramón", city: "Padre Las Casas", region: "La Araucanía" },
+  { street: "Eleuterio Ramírez", city: "Padre Las Casas", region: "La Araucanía" },
+  { street: "Bilbao", city: "Padre Las Casas", region: "La Araucanía" },
+  { street: "Manuel Rodríguez", city: "Padre Las Casas", region: "La Araucanía" },
+  { street: "Manuel Montt", city: "Temuco", region: "La Araucanía" },
+  { street: "Av. Manuel Montt", city: "Temuco", region: "La Araucanía" },
+  { street: "Claro Solar", city: "Temuco", region: "La Araucanía" },
+  { street: "Portales", city: "Temuco", region: "La Araucanía" },
+  { street: "Vicuña Mackenna", city: "Temuco", region: "La Araucanía" },
+  { street: "Av. Pedro de Valdivia", city: "Temuco", region: "La Araucanía" },
+  { street: "Prieto Norte", city: "Temuco", region: "La Araucanía" },
+  { street: "Prieto Sur", city: "Temuco", region: "La Araucanía" },
+  { street: "Caupolicán", city: "Temuco", region: "La Araucanía" },
+  { street: "Av. Caupolicán", city: "Temuco", region: "La Araucanía" },
+  { street: "Balmaceda", city: "Temuco", region: "La Araucanía" },
+  { street: "Barros Arana", city: "Temuco", region: "La Araucanía" },
+  { street: "Lautaro", city: "Temuco", region: "La Araucanía" },
+  { street: "San Martín", city: "Temuco", region: "La Araucanía" },
+  { street: "Aldunate", city: "Temuco", region: "La Araucanía" },
+  { street: "Bulnes", city: "Temuco", region: "La Araucanía" },
+  { street: "General Cruz", city: "Temuco", region: "La Araucanía" },
+  { street: "Arturo Prat", city: "Temuco", region: "La Araucanía" },
+  { street: "Av. Alemania", city: "Temuco", region: "La Araucanía" },
+  { street: "Av. Arturo Prat", city: "Temuco", region: "La Araucanía" },
+];
+
 function normalize(value: string): string {
   return value
     .toLowerCase()
@@ -85,40 +115,96 @@ function normalize(value: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/** Sugerencias de ciudad/comuna a partir de un fragmento escrito. */
-export function suggestAddresses(query: string, country?: string): AddressSuggestion[] {
-  const term = normalize(query.trim());
+function capitalizeWords(value: string): string {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((word) => (word.length > 1 ? word[0].toUpperCase() + word.slice(1) : word.toUpperCase()))
+    .join(" ");
+}
 
+function findCityForm(term: string): string | null {
+  const normalized = normalize(term);
+  for (const regions of Object.values(REGIONS_BY_COUNTRY)) {
+    for (const region of regions) {
+      for (const city of region.cities) {
+        if (normalize(city) === normalized) return city;
+      }
+    }
+  }
+  return null;
+}
+
+/** Sugerencias de dirección completa: calle + comuna o ciudad/comuna. */
+export function suggestAddresses(query: string, country?: string): AddressSuggestion[] {
+  const full = query.trim();
+  const term = normalize(full);
   if (term.length < 2) return [];
 
-  const candidates = country
-    ? (REGIONS_BY_COUNTRY[country] ?? [])
-    : Object.values(REGIONS_BY_COUNTRY).flat();
+  const parts = full.split(",").map((part) => part.trim()).filter(Boolean);
+  const hasComma = parts.length > 1;
+  const streetInput = hasComma ? parts[0] : "";
+  const placeInput = hasComma ? parts.slice(1).join(", ") : full;
+
+  const streetTerm = normalize(streetInput);
+  const placeTerm = normalize(placeInput);
 
   const seen = new Set<string>();
   const results: AddressSuggestion[] = [];
 
-  for (const region of candidates) {
-    for (const city of region.cities) {
-      const haystack = normalize(`${city} ${region.name} ${city}`);
-      if (!haystack.includes(term)) continue;
+  const push = (label: string, city: string, region: string, countryName: string) => {
+    const key = normalize(label);
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push({ city, region, country: countryName, label });
+  };
 
-      const countryName = country ?? findCountryByRegion(region.name) ?? "";
-      const suggestion: AddressSuggestion = {
-        city,
-        region: region.name,
-        country: countryName,
-        label: `${city}, ${region.name}${countryName ? `, ${countryName}` : ""}`,
-      };
+  // 1. Sugerencias de calle cuando hay un texto antes de la coma (o una calle solita).
+  if (hasComma ? streetTerm.length >= 2 : term.length >= 3) {
+    const streetMatches = STREETS.filter(
+      (street) =>
+        normalize(street.street).includes(streetTerm) ||
+        streetTerm.includes(normalize(street.street)),
+    );
 
-      const key = normalize(suggestion.label);
-      if (seen.has(key)) continue;
+    const numberMatch = full.match(/\d+/);
+    const streetNumber = numberMatch ? ` ${numberMatch[0]}` : "";
 
-      seen.add(key);
-      results.push(suggestion);
+    for (const street of streetMatches) {
+      const countryName = country ?? "Chile";
+      const placeForm =
+        hasComma && placeTerm.length >= 2
+          ? findCityForm(placeInput) ?? capitalizeWords(placeInput)
+          : street.city;
+      const regionForm = hasComma && placeTerm.length >= 2 ? "" : street.region;
+
+      const label =
+        hasComma
+          ? `${street.street}${streetNumber}, ${placeForm}${regionForm ? `, ${regionForm}` : ""}${countryName ? `, ${countryName}` : ""}`
+          : `${street.street}${streetNumber}, ${street.city}, ${street.region}, ${countryName}`;
+
+      push(label, street.city, regionForm || street.region, countryName);
     }
+  }
 
-    if (results.length >= 8) break;
+  // 2. Sugerencias de ciudad/comuna.
+  const candidates = country
+    ? (REGIONS_BY_COUNTRY[country] ?? [])
+    : Object.values(REGIONS_BY_COUNTRY).flat();
+
+  if (placeTerm.length >= 2) {
+    for (const region of candidates) {
+      for (const city of region.cities) {
+        const haystack = normalize(`${city} ${region.name} ${city}`);
+        if (!haystack.includes(placeTerm)) continue;
+
+        const countryName = country ?? findCountryByRegion(region.name) ?? "";
+        push(`${city}, ${region.name}${countryName ? `, ${countryName}` : ""}`, city, region.name, countryName);
+
+        if (results.length >= 8) break;
+      }
+      if (results.length >= 8) break;
+    }
   }
 
   return results.slice(0, 8);

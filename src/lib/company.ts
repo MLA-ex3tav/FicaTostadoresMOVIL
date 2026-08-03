@@ -9,6 +9,9 @@ export interface CompanyData {
   phone: string;
   email: string;
   website: string;
+  giro: string;
+  bankName: string;
+  bankAccount: string;
 }
 
 const STORAGE_KEY = "fica.company.data";
@@ -21,14 +24,17 @@ export const DEFAULT_FICA: CompanyData = {
   region: "La Araucanía",
   country: "Chile",
   zip: "4780000",
-  phone: "+56 9 85088171",
-  email: "tostadoresfica@gmail.com",
+  phone: "+56 9 9002 0089",
+  email: "administracion@tostadoresfica.cl",
   website: "www.tostadoresfica.cl",
+  giro: "REPARACIÓN Y MANTENCIÓN DE MAQ.",
+  bankName: "BANCO SCOTIABANK",
+  bankAccount: "CUENTA CORRIENTE 979706529",
 };
 
 /** Devuelve los datos guardados o, si no hay nada guardado, los de FICA. */
 export function getCompanyData(): CompanyData {
-  return loadCompany() ?? DEFAULT_FICA;
+  return { ...DEFAULT_FICA, ...(loadCompany() ?? {}) };
 }
 
 export function loadCompany(): CompanyData | null {
@@ -37,7 +43,7 @@ export function loadCompany(): CompanyData | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CompanyData;
     if (!parsed || typeof parsed !== "object" || !parsed.name) return null;
-    return parsed;
+    return { ...DEFAULT_FICA, ...parsed };
   } catch {
     return null;
   }
