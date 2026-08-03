@@ -47,13 +47,6 @@ npm run cap:sync
 npx cap open android
 ```
 
-## Variables de entorno
-
-| Variable                        | Descripción                                        |
-| ------------------------------- | -------------------------------------------------- |
-| `VITE_WEB_API_URL`              | URL base de la web (heartbeat, solicitudes).       |
-| `VITE_COTIZACIONES_APP_SECRET`  | Secreto compartido (Bearer) con la web.            |
-| `VITE_FIREBASE_*`               | Config pública de Firebase (catálogo, lecturas).   |
 
 ## Estructura
 
