@@ -8,7 +8,7 @@ import {
   subscribeSolicitudes,
   type SolicitudesState,
 } from "../services/solicitudes";
-import { generarCotizacionPdf, descargarPdf } from "../services/cotizacion-pdf";
+import { generarOtPdf, descargarOtPdf } from "../services/ot-pdf";
 import { openPdfViewer } from "../ui/pdf-viewer";
 import { showToast } from "../ui/toast";
 import { StatsGrid, StatCard } from "../components/StatCard";
@@ -83,14 +83,14 @@ export function OTScreen() {
   const verPdf = async (item: SolicitudRemota) => {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], generating: true } }));
     try {
-      const pdf = await generarCotizacionPdf(item);
+      const pdf = await generarOtPdf(item);
       openPdfViewer(pdf);
       showToast({
         title: "PDF de OT Generado",
         message: `Se ha abierto ${pdf.fileName} para visualización.`,
         tone: "success",
         icon: "fileText",
-        actions: [{ label: "Descargar PDF", onClick: () => descargarPdf(pdf), primary: true }],
+        actions: [{ label: "Descargar PDF", onClick: () => descargarOtPdf(pdf), primary: true }],
       });
     } catch (error) {
       console.error("Error al generar PDF de OT:", error);
