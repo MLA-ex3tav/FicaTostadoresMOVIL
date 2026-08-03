@@ -1,7 +1,14 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
+import { Filesystem, Directory } from "@capacitor/filesystem";
 import { APP_VERSION, GITHUB_REPO, APK_ASSET_SUFFIX } from "../lib/app-config";
 import { showToast } from "../ui/toast";
+
+interface ApkInstallerPlugin {
+  install(options: { filePath: string }): Promise<{ ok: boolean }>;
+}
+
+const ApkInstaller = registerPlugin<ApkInstallerPlugin>("ApkInstaller");
 
 export interface GitHubReleaseAsset {
   name: string;
@@ -132,6 +139,90 @@ export async function openUpdate(apkUrl: string | null, releaseUrl: string | nul
     await Browser.open({ url, presentationStyle: "fullscreen" });
   } else {
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      resolve(typeof result === "string" ? result.split(",")[1] ?? result : "");
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function downloadWithProgress(
+  url: string,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<Blob> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const total = Number(response.headers.get("content-length") ?? 0);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.body) {
+    return response.blob();
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded, total);
+  }
+
+  return new Blob(chunks, { type: contentType || "application/vnd.android.package-archive" });
+}
+
+/**
+ * Descarga el APK en segundo plano (con progreso) y abre el instalador de
+ * Android vía el plugin nativo. En web, descarga el archivo.
+ */
+export async function downloadAndInstallApk(
+  apkUrl: string,
+  fileName: string,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<"installing" | "downloaded" | "error"> {
+  const reportProgress = onProgress ?? (() => undefined);
+
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const blob = await downloadWithProgress(apkUrl, reportProgress);
+      const base64 = await blobToBase64(blob);
+      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+      await Filesystem.writeFile({
+        path: safeName,
+        directory: Directory.Cache,
+        data: base64,
+      });
+
+      const uri = await Filesystem.getUri({ path: safeName, directory: Directory.Cache });
+      await ApkInstaller.install({ filePath: uri.uri.replace(/^file:\/\//, "") });
+      return "installing";
+    }
+
+    const blob = await downloadWithProgress(apkUrl, reportProgress);
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    return "downloaded";
+  } catch (error) {
+    console.error("[updater] descarga falló:", error);
+    return "error";
   }
 }
 

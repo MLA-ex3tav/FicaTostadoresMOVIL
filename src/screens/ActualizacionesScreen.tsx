@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Download, CheckCircle2, GitBranch, AlertTriangle } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import { APP_VERSION } from "../lib/app-config";
-import { checkForUpdates, openUpdate, type UpdateCheckResult } from "../services/updater";
+import {
+  checkForUpdates,
+  downloadAndInstallApk,
+  type UpdateCheckResult,
+} from "../services/updater";
+import { showToast } from "../ui/toast";
 import { formatBytes, formatDate } from "./shared";
 
 type Status = "idle" | "checking" | "done" | "error";
@@ -12,6 +18,9 @@ export function ActualizacionesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastCheck, setLastCheck] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState<{ loaded: number; total: number; pct: number } | null>(
+    null,
+  );
 
   const buscar = useCallback(async () => {
     setStatus("checking");
@@ -28,10 +37,38 @@ export function ActualizacionesScreen() {
   }, [buscar]);
 
   const handleDownload = async () => {
-    if (!result) return;
+    if (!result?.apkUrl) return;
     setDownloading(true);
+    setProgress({ loaded: 0, total: 0, pct: 0 });
     try {
-      await openUpdate(result.apkUrl, result.releaseUrl);
+      const fileName = apkAsset?.name ?? "fica-tostadores.apk";
+      const outcome = await downloadAndInstallApk(result.apkUrl, fileName, (loaded, total) => {
+        setProgress({ loaded, total, pct: total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0 });
+      });
+
+      if (outcome === "installing") {
+        setProgress({ loaded: 0, total: 0, pct: 100 });
+        showToast({
+          title: "Descarga completada",
+          message: "El APK se descargó. Confirma la instalación cuando Android lo solicite.",
+          tone: "success",
+          durationMs: 10000,
+        });
+      } else if (outcome === "downloaded") {
+        setProgress({ loaded: 0, total: 0, pct: 100 });
+        showToast({
+          title: "APK descargado",
+          message: "El archivo se descargó. Ábrelo para instalarlo.",
+          tone: "success",
+        });
+      } else {
+        setProgress(null);
+        showToast({
+          title: "Error al descargar",
+          message: "No se pudo descargar el APK. Revisa tu conexión o inténtalo de nuevo.",
+          tone: "error",
+        });
+      }
     } finally {
       setDownloading(false);
     }
@@ -129,18 +166,34 @@ export function ActualizacionesScreen() {
               </div>
             ) : null}
 
-            <button
-              type="button"
-              className="btn btn--success"
-              onClick={() => void handleDownload()}
-              disabled={downloading}
-            >
-              <Download size={16} />
-              {downloading ? "Abriendo…" : "Descargar e instalar APK"}
-            </button>
+            {progress && downloading ? (
+              <div className="upd-progress">
+                <div className="upd-progress__bar" style={{ width: `${progress.pct}%` }} />
+                <div className="upd-progress__label">
+                  {progress.pct < 100
+                    ? `Descargando… ${progress.pct}%`
+                    : "Preparando instalación…"}
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn--success"
+                onClick={() => void handleDownload()}
+                disabled={downloading || !apkAsset}
+              >
+                <Download size={16} />
+                {downloading ? "Descargando…" : "Descargar e instalar APK"}
+              </button>
+            )}
             {!apkAsset && result.releaseUrl ? (
               <p className="upd-available__hint">
                 No se encontró un archivo .apk en la release. Se abrirá la página del release.
+              </p>
+            ) : null}
+            {Capacitor.isNativePlatform() ? (
+              <p className="upd-available__hint">
+                La descarga se hace en segundo plano y luego se abre el instalador de Android.
               </p>
             ) : null}
           </div>
