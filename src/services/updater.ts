@@ -60,6 +60,7 @@ export function isNewerVersion(currentVersion: string, targetVersion: string): b
 
 /**
  * Consulta la release más reciente en GitHub Releases.
+ * Retorna null si no hay releases publicadas (404) o si falla la conexión.
  */
 export async function getLatestRelease(): Promise<GitHubRelease | null> {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
@@ -93,7 +94,8 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
     if (!release) {
       return {
         ...empty,
-        error: "No se pudo consultar GitHub Releases. Verifica la conexión.",
+        error:
+          "No hay versiones publicadas todavía o no se pudo conectar con GitHub Releases.",
       };
     }
 
