@@ -21,6 +21,7 @@ import { generarCotizacionPdf, type CotizacionPdf } from "../services/cotizacion
 import { registrarOrdenTrabajo, type SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
 import { abrirGmail, abrirWhatsApp, compartirPdf, descargarPdf } from "../lib/share";
+import { openPdfViewer } from "../ui/pdf-viewer";
 import { getCompanyData } from "../lib/company";
 import { suggestAddresses } from "../lib/geo";
 import { EmptyState } from "../components/EmptyState";
@@ -632,6 +633,9 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   </button>
                   <button type="button" className="btn btn--info" onClick={() => void abrirGmail(resultado)}>
                     <Mail size={16} /> Gmail
+                  </button>
+                  <button type="button" className="btn btn--secondary" onClick={() => void openPdfViewer(resultado)}>
+                    <Package size={16} /> Ver
                   </button>
                   <button type="button" className="btn btn--secondary" onClick={() => void descargarPdf(resultado)}>
                     <Package size={16} /> Descargar

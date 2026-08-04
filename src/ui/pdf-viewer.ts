@@ -1,11 +1,14 @@
 import { Capacitor } from "@capacitor/core";
-import { Browser } from "@capacitor/browser";
+import { abrirPdfConVisor } from "../services/pdf-opener";
 import type { CotizacionPdf } from "../services/cotizacion-pdf";
 
-/** Abre el PDF en el navegador del sistema (nativo) o en una pestaña (web). */
+/**
+ * Abre el PDF: en el celular muestra el selector "Abrir con" de Android con
+ * los visores instalados; en web abre el PDF en una pestaña nueva.
+ */
 export async function openPdfViewer(pdf: CotizacionPdf): Promise<void> {
   if (Capacitor.isNativePlatform()) {
-    await Browser.open({ url: pdf.url, presentationStyle: "fullscreen" });
+    await abrirPdfConVisor(pdf);
   } else {
     window.open(pdf.url, "_blank", "noopener,noreferrer");
   }

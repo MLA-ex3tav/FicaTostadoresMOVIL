@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { jsPDF } from "jspdf";
 import type { SolicitudRemota } from "../lib/web-api";
 import { findProducto, getPrecioLocal, getCatalogo, loadCatalogo } from "./catalog";
@@ -495,8 +496,13 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
   return { blob, fileName, url, item };
 }
 
-/** Descarga un PDF de OT generado. */
+/** Descarga un PDF de OT generado. En el celular abre el visor externo. */
 export function descargarOtPdf(pdf: OtPdf): void {
+  if (Capacitor.isNativePlatform()) {
+    void openPdfViewer(pdf);
+    return;
+  }
+
   const anchor = document.createElement("a");
   anchor.href = pdf.url;
   anchor.download = pdf.fileName;
