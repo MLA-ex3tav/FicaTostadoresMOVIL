@@ -20,7 +20,6 @@ import { registrarOrdenTrabajo, type SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
 import { getCompanyData } from "../lib/company";
-import { suggestAddresses } from "../lib/geo";
 import { EmptyState } from "../components/EmptyState";
 import {
   clearCotizacionDraft,
@@ -96,8 +95,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   });
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [addressFocused, setAddressFocused] = useState(false);
-  const [activeSuggestion, setActiveSuggestion] = useState(0);
   const [draftBanner, setDraftBanner] = useState(false);
 
   useEffect(() => {
@@ -197,8 +194,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     });
     setMessage("");
     setSeleccion({});
-    setAddressFocused(false);
-    setActiveSuggestion(0);
   };
 
   const filtered = useMemo(() => {
@@ -227,17 +222,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     (sum, item) => sum + getPrecioLocal(item.product) * item.quantity,
     0,
   );
-
-  const addressSuggestions = useMemo(() => {
-    const value = cliente.address.trim();
-    if (!value || !addressFocused) return [];
-    return suggestAddresses(value, "Chile");
-  }, [cliente.address, addressFocused]);
-
-  const seleccionarDireccion = (label: string) => {
-    setCliente((prev) => ({ ...prev, address: label }));
-    setActiveSuggestion(0);
-  };
 
   const agregar = (product: ProductoCatalogo) => {
     setSeleccion((prev) => {
@@ -492,59 +476,15 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               </div>
               <div className="form-field form-field--wide">
                 <label className="form-label" htmlFor="nc-address">Dirección</label>
-                <div className="address-input">
-                  <input
-                    id="nc-address"
-                    className="form-input"
-                    type="text"
-                    value={cliente.address}
-                    autoComplete="off"
-                    onChange={(event) => {
-                      setCliente({ ...cliente, address: event.target.value });
-                      setActiveSuggestion(0);
-                    }}
-                    onFocus={() => setAddressFocused(true)}
-                    onBlur={() => {
-                      setTimeout(() => setAddressFocused(false), 150);
-                    }}
-                    onKeyDown={(event) => {
-                      if (addressSuggestions.length === 0) return;
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        setActiveSuggestion((current) =>
-                          Math.min(current + 1, addressSuggestions.length - 1),
-                        );
-                      } else if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        setActiveSuggestion((current) => Math.max(current - 1, 0));
-                      } else if (event.key === "Enter") {
-                        event.preventDefault();
-                        seleccionarDireccion(addressSuggestions[activeSuggestion].label);
-                      } else if (event.key === "Escape") {
-                        setAddressFocused(false);
-                      }
-                    }}
-                    placeholder="Calle, número, depto · Comuna, Región, País"
-                  />
-                  {addressSuggestions.length > 0 ? (
-                    <ul className="address-suggestions" role="listbox">
-                      {addressSuggestions.map((suggestion, index) => (
-                        <li key={suggestion.label}>
-                          <button
-                            type="button"
-                            className={`address-suggestion${index === activeSuggestion ? " address-suggestion--active" : ""}`}
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              seleccionarDireccion(suggestion.label);
-                            }}
-                          >
-                            {suggestion.label}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
+                <input
+                  id="nc-address"
+                  className="form-input"
+                  type="text"
+                  value={cliente.address}
+                  autoComplete="off"
+                  onChange={(event) => setCliente({ ...cliente, address: event.target.value })}
+                  placeholder="Calle, número, depto · Comuna, Región, País"
+                />
               </div>
             </div>
           </section>
@@ -560,10 +500,30 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       {step === 2 ? (
         <>
           {items.length > 0 ? (
-            <section className="form-section">
-              <h2 className="form-section__title">
-                Seleccionados ({totalProductos} producto{totalProductos === 1 ? "" : "s"})
-              </h2>
+            <div className="selection-summary">
+              <div className="selection-summary__info">
+                <span className="selection-summary__count">
+                  {totalProductos} producto{totalProductos === 1 ? "" : "s"} seleccionado{totalProductos === 1 ? "" : "s"}
+                </span>
+                <span className="selection-summary__total">
+                  Total · {formatPrecio(totalCotizacion)}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={irSiguiente}
+              >
+                Continuar <ArrowRight size={18} />
+              </button>
+            </div>
+          ) : null}
+
+          {items.length > 0 ? (
+              <section className="form-section">
+                <h2 className="form-section__title">
+                  Seleccionados ({totalProductos} producto{totalProductos === 1 ? "" : "s"})
+                </h2>
               <ul className="card-list">
                 {items.map(({ product, quantity }) => (
                   <li key={product.id} className="card-list__item">
@@ -657,8 +617,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               </ul>
             )}
           </section>
-
-          {items.length > 0 ? <div className="fab-spacer" aria-hidden="true" /> : null}
         </>
       ) : null}
 
@@ -720,17 +678,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
             </button>
           </div>
         </>
-      ) : null}
-
-      {step === 2 && items.length > 0 ? (
-        <div className="fab-bar">
-          <button type="button" className="btn btn--primary fab-bar__button" onClick={irSiguiente}>
-            <span className="fab-bar__count">
-              {totalProductos} producto{totalProductos === 1 ? "" : "s"} seleccionado{totalProductos === 1 ? "" : "s"}
-            </span>
-            <ArrowRight size={18} />
-          </button>
-        </div>
       ) : null}
     </div>
   );

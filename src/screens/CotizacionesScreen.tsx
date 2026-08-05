@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, Check, X, Trash2 } from "lucide-react";
+import { FileText, Check, X, Trash2, Pencil } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   aprobarCotizacion,
@@ -18,6 +18,7 @@ import { StatsGrid, StatCard } from "../components/StatCard";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EditarCotizacion } from "../components/EditarCotizacion";
 import {
   estadoLabel,
   estadoPillVariant,
@@ -38,6 +39,7 @@ export function CotizacionesScreen() {
   const [itemState, setItemState] = useState<Record<string, ItemState>>({});
   const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState<SolicitudRemota | null>(null);
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
@@ -209,6 +211,14 @@ export function CotizacionesScreen() {
                     <button
                       type="button"
                       className="btn btn--secondary btn--sm"
+                      onClick={() => setEditing(item)}
+                      aria-label="Editar cotización"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
                       onClick={() => void verPdf(item)}
                       disabled={local.generating}
                       aria-label="Ver PDF"
@@ -279,6 +289,10 @@ export function CotizacionesScreen() {
           if (!deleting) setConfirmDelete(null);
         }}
       />
+
+      {editing ? (
+        <EditarCotizacion item={editing} onClose={() => setEditing(null)} />
+      ) : null}
     </div>
   );
 }

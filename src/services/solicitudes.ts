@@ -21,6 +21,32 @@ const state: SolicitudesState = {
   lastUpdatedAt: null,
 };
 
+/**
+ * Overrides locales aplicados sobre solicitudes traídas de la web.
+ * Se usan para "modificar" una cotización en la app (cambios no persistentes
+ * en el servidor). Se re-aplican en cada refresh mientras la app esté abierta.
+ */
+const localOverrides: Record<string, Partial<SolicitudRemota>> = {};
+
+/** Guarda una edición local de una solicitud y notifica a la UI. */
+export function guardarEdicionLocal(id: string, patch: Partial<SolicitudRemota>): void {
+  localOverrides[id] = { ...(localOverrides[id] ?? {}), ...patch };
+
+  const index = state.cotizaciones.findIndex((item) => item.id === id);
+  if (index >= 0) {
+    state.cotizaciones[index] = { ...state.cotizaciones[index], ...localOverrides[id] };
+  }
+
+  emit();
+}
+
+function applyOverrides(solicitudes: SolicitudRemota[]): SolicitudRemota[] {
+  return solicitudes.map((solicitud) => {
+    const override = localOverrides[solicitud.id];
+    return override ? { ...solicitud, ...override } : solicitud;
+  });
+}
+
 type SolicitudesListener = (state: SolicitudesState) => void;
 
 const listeners = new Set<SolicitudesListener>();
@@ -65,7 +91,7 @@ export async function refreshSolicitudes(): Promise<void> {
     ]);
 
     if (cotizaciones.ok && cotizaciones.data) {
-      state.cotizaciones = cotizaciones.data.solicitudes;
+      state.cotizaciones = applyOverrides(cotizaciones.data.solicitudes);
     }
 
     if (soporte.ok && soporte.data) {

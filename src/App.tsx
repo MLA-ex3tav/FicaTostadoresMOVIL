@@ -94,7 +94,9 @@ export function App() {
 
       <main className="content">
         <PullToRefresh onRefresh={refreshSolicitudes}>
-          {renderScreen(view, setView)}
+          <div key={view} className="view-transition">
+            {renderScreen(view, setView)}
+          </div>
         </PullToRefresh>
       </main>
 
