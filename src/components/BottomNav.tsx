@@ -5,6 +5,7 @@ import {
   History,
   Menu,
   MoreHorizontal,
+  Plus,
   X,
   Users,
   Box,
@@ -17,9 +18,12 @@ import {
 import type { ViewId } from "../types";
 import { subscribeNavBadges } from "../lib/badges";
 
-const PRIMARY_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> = [
+const LEFT_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> = [
   { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
   { id: "ot", label: "OT", icon: ClipboardList },
+];
+
+const RIGHT_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> = [
   { id: "historial", label: "Historial", icon: History },
 ];
 
@@ -49,45 +53,60 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
   const badges = useBadges();
 
   const highlight = active === "nueva" ? "cotizaciones" : active;
-  const primaryActive = PRIMARY_ITEMS.some((item) => item.id === highlight);
+  const primaryActive = [...LEFT_ITEMS, ...RIGHT_ITEMS].some(
+    (item) => item.id === highlight,
+  );
 
   const select = (view: ViewId) => {
     onChange(view);
     setSheetOpen(false);
   };
 
+  const renderItem = (item: (typeof LEFT_ITEMS)[number]) => {
+    const Icon = item.icon;
+    const badge = badges[item.id];
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className={`bottom-nav__item${highlight === item.id ? " bottom-nav__item--active" : ""}`}
+        onClick={() => select(item.id)}
+      >
+        <span className="bottom-nav__icon" aria-hidden="true">
+          <Icon size={20} />
+          {badge ? <span className="bottom-nav__badge">{badge > 99 ? "99+" : badge}</span> : null}
+        </span>
+        <span className="bottom-nav__label">{item.label}</span>
+      </button>
+    );
+  };
+
   return (
     <>
       <nav className="bottom-nav" aria-label="Navegación inferior">
-        {PRIMARY_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const badge = badges[item.id];
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`bottom-nav__item${highlight === item.id ? " bottom-nav__item--active" : ""}`}
-              onClick={() => select(item.id)}
-            >
-              <span className="bottom-nav__icon" aria-hidden="true">
-                <Icon size={20} />
-                {badge ? <span className="bottom-nav__badge">{badge > 99 ? "99+" : badge}</span> : null}
-              </span>
-              <span className="bottom-nav__label">{item.label}</span>
-            </button>
-          );
-        })}
+        <div className="bottom-nav__group">{LEFT_ITEMS.map(renderItem)}</div>
         <button
           type="button"
-          className={`bottom-nav__item${!primaryActive && !sheetOpen ? " bottom-nav__item--active" : ""}`}
-          aria-label="Ver más opciones"
-          onClick={() => setSheetOpen((open) => !open)}
+          className="bottom-nav__fab"
+          aria-label="Nueva cotización"
+          onClick={() => select("nueva")}
         >
-          <span className="bottom-nav__icon" aria-hidden="true">
-            {sheetOpen ? <X size={20} /> : <MoreHorizontal size={20} />}
-          </span>
-          <span className="bottom-nav__label">Más</span>
+          <Plus size={26} strokeWidth={2.5} />
         </button>
+        <div className="bottom-nav__group">
+          {RIGHT_ITEMS.map(renderItem)}
+          <button
+            type="button"
+            className={`bottom-nav__item${!primaryActive && !sheetOpen ? " bottom-nav__item--active" : ""}`}
+            aria-label="Ver más opciones"
+            onClick={() => setSheetOpen((open) => !open)}
+          >
+            <span className="bottom-nav__icon" aria-hidden="true">
+              {sheetOpen ? <X size={20} /> : <MoreHorizontal size={20} />}
+            </span>
+            <span className="bottom-nav__label">Más</span>
+          </button>
+        </div>
       </nav>
 
       {sheetOpen ? (

@@ -1,5 +1,6 @@
 import {
   actualizarEstadoSolicitud,
+  eliminarSolicitud,
   fetchSolicitudes,
   type SolicitudRemota,
 } from "../lib/web-api";
@@ -43,6 +44,7 @@ const POLL_INTERVAL_MS = 30_000;
 
 let pollTimer: number | null = null;
 let refreshInFlight: Promise<void> | null = null;
+let hasLoadedOnce = false;
 
 export async function refreshSolicitudes(): Promise<void> {
   if (refreshInFlight) {
@@ -50,8 +52,12 @@ export async function refreshSolicitudes(): Promise<void> {
   }
 
   refreshInFlight = (async () => {
-    state.loading = true;
-    emit();
+    // Solo emitimos el estado "loading" en la primera carga. En los polls
+    // de fondo no se re-renderiza nada intermedio (evita saltos de layout).
+    if (!hasLoadedOnce) {
+      state.loading = true;
+      emit();
+    }
 
     const [cotizaciones, soporte] = await Promise.all([
       fetchSolicitudes("cotizaciones"),
@@ -64,6 +70,10 @@ export async function refreshSolicitudes(): Promise<void> {
 
     if (soporte.ok && soporte.data) {
       state.soporte = soporte.data.solicitudes;
+    }
+
+    if (cotizaciones.ok && soporte.ok) {
+      hasLoadedOnce = true;
     }
 
     const errors = [cotizaciones, soporte]
@@ -135,6 +145,19 @@ export async function rechazarCotizacion(
   id: string,
 ): Promise<{ ok: boolean; error: string | null }> {
   const result = await actualizarEstadoSolicitud(id, "rechazada");
+
+  if (result.ok) {
+    await refreshSolicitudes();
+    return { ok: true, error: null };
+  }
+
+  return { ok: false, error: result.error ?? "Error desconocido" };
+}
+
+export async function borrarSolicitud(
+  id: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  const result = await eliminarSolicitud(id);
 
   if (result.ok) {
     await refreshSolicitudes();

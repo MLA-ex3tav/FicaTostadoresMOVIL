@@ -3,6 +3,7 @@ import { Sun, Moon } from "lucide-react";
 import type { ViewId } from "./types";
 import { BottomNav } from "./components/BottomNav";
 import { ToastHost } from "./components/ToastHost";
+import { PdfActionsSheet } from "./components/PdfActionsSheet";
 import { CotizacionesScreen } from "./screens/CotizacionesScreen";
 import { NuevaCotizacionScreen } from "./screens/NuevaCotizacionScreen";
 import { EmpresaScreen } from "./screens/EmpresaScreen";
@@ -16,11 +17,13 @@ import { ConexionesScreen } from "./screens/ConexionesScreen";
 import { ActualizacionesScreen } from "./screens/ActualizacionesScreen";
 import { getTheme, toggleTheme, type Theme } from "./ui/theme";
 import { APP_VERSION } from "./lib/app-config";
+import { PullToRefresh } from "./components/PullToRefresh";
+import { refreshSolicitudes } from "./services/solicitudes";
 
 function renderScreen(view: ViewId, setView: (view: ViewId) => void): React.JSX.Element | null {
   switch (view) {
     case "cotizaciones":
-      return <CotizacionesScreen onNavigate={(target) => setView(target as ViewId)} />;
+      return <CotizacionesScreen />;
     case "nueva":
       return <NuevaCotizacionScreen onBack={() => setView("cotizaciones")} />;
     case "ot":
@@ -90,11 +93,14 @@ export function App() {
       </header>
 
       <main className="content">
-        {renderScreen(view, setView)}
+        <PullToRefresh onRefresh={refreshSolicitudes}>
+          {renderScreen(view, setView)}
+        </PullToRefresh>
       </main>
 
       <BottomNav active={view} onChange={setView} />
       <ToastHost />
+      <PdfActionsSheet />
     </div>
   );
 }

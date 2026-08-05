@@ -11,7 +11,9 @@ function emit(): void {
 }
 
 export function setNavBadge(viewId: ViewId, count: number): void {
-  state[viewId] = count > 0 ? count : undefined;
+  const next = count > 0 ? count : undefined;
+  if (state[viewId] === next) return;
+  state[viewId] = next;
   emit();
 }
 

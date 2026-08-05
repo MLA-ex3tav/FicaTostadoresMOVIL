@@ -168,6 +168,40 @@ export async function actualizarEstadoSolicitud(
   }
 }
 
+export async function eliminarSolicitud(
+  id: string,
+): Promise<ApiResult<{ ok: boolean }>> {
+  const { webUrl } = getConfig();
+
+  if (!webUrl) {
+    return fail(null, 0, "VITE_WEB_API_URL no definida en .env");
+  }
+
+  const started = performance.now();
+
+  try {
+    const res = await fetch(`${webUrl}/api/electron/solicitudes/${id}`, {
+      method: "DELETE",
+      headers: { ...authHeaders() },
+    });
+    const latencyMs = Math.round(performance.now() - started);
+
+    if (res.ok) {
+      const data = (await res.json()) as { ok: boolean };
+      return ok(res.status, latencyMs, data);
+    }
+
+    const apiError = await readApiError(res);
+    return fail(res.status, latencyMs, apiError ?? `HTTP ${res.status}`);
+  } catch (error) {
+    return fail(
+      null,
+      Math.round(performance.now() - started),
+      `Sin respuesta (${errorMessage(error)})`,
+    );
+  }
+}
+
 export async function fetchSolicitudes(
   tipo: SolicitudesTipo,
 ): Promise<ApiResult<SolicitudesResponse>> {

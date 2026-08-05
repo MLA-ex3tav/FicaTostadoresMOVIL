@@ -1,11 +1,20 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import {
+  Capacitor,
+  registerPlugin,
+  type PluginListenerHandle,
+} from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
-import { Filesystem, Directory } from "@capacitor/filesystem";
 import { APP_VERSION, GITHUB_REPO, APK_ASSET_SUFFIX } from "../lib/app-config";
 import { showToast } from "../ui/toast";
 
 interface ApkInstallerPlugin {
   install(options: { filePath: string }): Promise<{ ok: boolean }>;
+  download(options: { url: string; fileName: string }): Promise<{ filePath: string }>;
+  addListener(
+    eventName: "downloadProgress",
+    listenerFunc: (data: { loaded: number; total: number }) => void,
+  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  removeAllListeners(): Promise<void>;
 }
 
 const ApkInstaller = registerPlugin<ApkInstallerPlugin>("ApkInstaller");
@@ -142,18 +151,6 @@ export async function openUpdate(apkUrl: string | null, releaseUrl: string | nul
   }
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result;
-      resolve(typeof result === "string" ? result.split(",")[1] ?? result : "");
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
 async function downloadWithProgress(
   url: string,
   onProgress: (loaded: number, total: number) => void,
@@ -197,19 +194,20 @@ export async function downloadAndInstallApk(
 
   try {
     if (Capacitor.isNativePlatform()) {
-      const blob = await downloadWithProgress(apkUrl, reportProgress);
-      const base64 = await blobToBase64(blob);
       const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const progressListener = onProgress
+        ? await ApkInstaller.addListener("downloadProgress", (data) => {
+            onProgress(Number(data.loaded ?? 0), Number(data.total ?? 0));
+          })
+        : null;
 
-      await Filesystem.writeFile({
-        path: safeName,
-        directory: Directory.Cache,
-        data: base64,
-      });
-
-      const uri = await Filesystem.getUri({ path: safeName, directory: Directory.Cache });
-      await ApkInstaller.install({ filePath: uri.uri.replace(/^file:\/\//, "") });
-      return "installing";
+      try {
+        const { filePath } = await ApkInstaller.download({ url: apkUrl, fileName: safeName });
+        await ApkInstaller.install({ filePath });
+        return "installing";
+      } finally {
+        if (progressListener) await progressListener.remove();
+      }
     }
 
     const blob = await downloadWithProgress(apkUrl, reportProgress);

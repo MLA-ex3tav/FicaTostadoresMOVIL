@@ -66,6 +66,7 @@ export function ReportesScreen() {
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Análisis</div>
           <h1 className="view__title">Reportes</h1>
           <p className="view__subtitle">Métricas e ingresos por período</p>
         </div>

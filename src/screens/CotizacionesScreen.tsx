@@ -1,22 +1,23 @@
 import { useEffect, useState } from "react";
-import { FileText, Plus, RefreshCw, Check, X } from "lucide-react";
+import { FileText, Check, X, Trash2 } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   aprobarCotizacion,
+  borrarSolicitud,
   getSolicitudDate,
   isSolicitudPendiente,
   rechazarCotizacion,
-  refreshSolicitudes,
   subscribeSolicitudes,
   type SolicitudesState,
 } from "../services/solicitudes";
-import { generarCotizacionPdf, descargarPdf } from "../services/cotizacion-pdf";
-import { openPdfViewer } from "../ui/pdf-viewer";
+import { generarCotizacionPdf } from "../services/cotizacion-pdf";
 import { showToast } from "../ui/toast";
+import { openPdfActions } from "../ui/pdf-actions";
 import { setNavBadge } from "../lib/badges";
 import { StatsGrid, StatCard } from "../components/StatCard";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   estadoLabel,
   estadoPillVariant,
@@ -32,17 +33,17 @@ interface ItemState {
   acting: string | null;
 }
 
-export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) => void }) {
+export function CotizacionesScreen() {
   const [state, setState] = useState<SolicitudesState | null>(null);
   const [itemState, setItemState] = useState<Record<string, ItemState>>({});
+  const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
   }, []);
 
-  if (!state) return null;
-
-  const items = state.cotizaciones;
+  const items = state?.cotizaciones ?? [];
   const pendientes = items.filter(isSolicitudPendiente);
   const hoy = items.filter((item) => isToday(getSolicitudDate(item)));
   const semana = items.filter((item) => isThisWeek(getSolicitudDate(item)));
@@ -50,20 +51,23 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
     ["aprobada_ot", "completada"].includes(getEstado(item, "")),
   );
 
-  setNavBadge("cotizaciones", pendientes.length);
+  useEffect(() => {
+    setNavBadge("cotizaciones", pendientes.length);
+  }, [pendientes.length]);
+
+  if (!state) return null;
 
   const verPdf = async (item: SolicitudRemota) => {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], generating: true } }));
     try {
       const pdf = await generarCotizacionPdf(item);
-      openPdfViewer(pdf);
       showToast({
         title: "PDF Generado",
-        message: `Se ha abierto ${pdf.fileName} para visualización.`,
+        message: `${pdf.fileName} listo para compartir.`,
         tone: "success",
         icon: "fileText",
-        actions: [{ label: "Descargar PDF", onClick: () => descargarPdf(pdf), primary: true }],
       });
+      openPdfActions(pdf);
     } catch (error) {
       console.error("Error al generar PDF:", error);
       showToast({
@@ -95,17 +99,13 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
     });
     try {
       const pdf = await generarCotizacionPdf(item);
-      openPdfViewer(pdf);
       showToast({
         title: "PDF de Orden de Trabajo Generado",
-        message: `Documento ${pdf.fileName} listo.`,
+        message: `Documento ${pdf.fileName} listo para compartir.`,
         tone: "success",
         icon: "fileText",
-        actions: [
-          { label: "Ver PDF", onClick: () => openPdfViewer(pdf), primary: true },
-          { label: "Descargar", onClick: () => descargarPdf(pdf) },
-        ],
       });
+      openPdfActions(pdf);
     } catch (error) {
       console.error("No se pudo generar el PDF de la OT", error);
     }
@@ -132,35 +132,38 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], acting: null } }));
   };
 
+  const eliminar = async (item: SolicitudRemota) => {
+    setDeleting(true);
+    const result = await borrarSolicitud(item.id);
+    setDeleting(false);
+    if (!result.ok) {
+      showToast({
+        title: "Error al eliminar",
+        message: result.error ?? "No se pudo eliminar la cotización.",
+        tone: "error",
+      });
+      return;
+    }
+    setConfirmDelete(null);
+    showToast({
+      title: "Cotización Eliminada",
+      message: "La solicitud fue eliminada.",
+      tone: "success",
+    });
+  };
+
   return (
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Operación</div>
           <h1 className="view__title">Cotizaciones</h1>
           <p className="view__subtitle">Solicitudes pendientes en tiempo real</p>
-        </div>
-        <div className="view__actions">
-          <button
-            className="btn btn--primary"
-            type="button"
-            onClick={() => onNavigate("nueva")}
-          >
-            <Plus size={16} /> Nueva
-          </button>
-          <button
-            className="btn btn--secondary btn--icon"
-            type="button"
-            onClick={() => void refreshSolicitudes()}
-            disabled={state.loading}
-            aria-label="Actualizar"
-          >
-            <RefreshCw size={16} className={state.loading ? "spin" : ""} />
-          </button>
         </div>
       </div>
 
       <StatsGrid>
-        <StatCard label="Pendientes" value={String(pendientes.length)} tone="accent" hint={state.loading ? "Actualizando…" : undefined} />
+        <StatCard label="Pendientes" value={String(pendientes.length)} tone="accent" />
         <StatCard label="Hoy" value={String(hoy.length)} tone="info" />
         <StatCard label="Esta semana" value={String(semana.length)} />
         <StatCard label="Aprobadas" value={String(aprobadas.length)} tone="success" />
@@ -208,8 +211,9 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
                       className="btn btn--secondary btn--sm"
                       onClick={() => void verPdf(item)}
                       disabled={local.generating}
+                      aria-label="Ver PDF"
                     >
-                      <FileText size={14} /> {local.generating ? "Generando…" : "PDF"}
+                      <FileText size={14} />
                     </button>
                     {esEditable ? (
                       <>
@@ -219,7 +223,13 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
                           onClick={() => void aprobar(item)}
                           disabled={local.acting !== null}
                         >
-                          <Check size={14} /> {local.acting === "aprobar" ? "Aprobando…" : "Aprobar"}
+                          {local.acting === "aprobar" ? (
+                            <span className="btn__spinner" aria-hidden="true" />
+                          ) : (
+                            <>
+                              <Check size={14} /> Aprobar
+                            </>
+                          )}
                         </button>
                         <button
                           type="button"
@@ -227,10 +237,25 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
                           onClick={() => void rechazar(item)}
                           disabled={local.acting !== null}
                         >
-                          <X size={14} /> {local.acting === "rechazar" ? "Rechazando…" : "Rechazar"}
+                          {local.acting === "rechazar" ? (
+                            <span className="btn__spinner" aria-hidden="true" />
+                          ) : (
+                            <>
+                              <X size={14} /> Rechazar
+                            </>
+                          )}
                         </button>
                       </>
                     ) : null}
+                    <button
+                      type="button"
+                      className="btn btn--danger btn--sm"
+                      onClick={() => setConfirmDelete(item)}
+                      disabled={local.generating || local.acting !== null}
+                      aria-label="Eliminar cotización"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </li>
               );
@@ -241,6 +266,19 @@ export function CotizacionesScreen({ onNavigate }: { onNavigate: (view: string) 
           <div className="conn-updated">Última actualización con errores: {state.error}</div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Eliminar cotización"
+        message={`¿Seguro que deseas eliminar la solicitud de ${confirmDelete ? String(confirmDelete.clientName ?? "este cliente") : ""}? Esta acción no se puede deshacer.`}
+        busy={deleting}
+        onConfirm={() => {
+          if (confirmDelete) void eliminar(confirmDelete);
+        }}
+        onCancel={() => {
+          if (!deleting) setConfirmDelete(null);
+        }}
+      />
     </div>
   );
 }

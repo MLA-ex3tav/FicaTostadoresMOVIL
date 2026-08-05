@@ -63,6 +63,7 @@ export function ConexionesScreen() {
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Sistema</div>
           <h1 className="view__title">Conexiones</h1>
           <p className="view__subtitle">Estado del enlace app ↔ web y base de datos</p>
         </div>

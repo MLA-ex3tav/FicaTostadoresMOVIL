@@ -4,7 +4,7 @@
  */
 
 /** Versión de la app (sincronízala con la `version` del package.json al publicar). */
-export const APP_VERSION = "0.3.1";
+export const APP_VERSION = "0.5.0";
 
 /**
  * Repositorio GitHub donde se publican las releases del APK (formato "usuario/repo").

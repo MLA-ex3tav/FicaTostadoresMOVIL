@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Download, CheckCircle2, GitBranch, AlertTriangle } from "lucide-react";
+import { RefreshCw, Download, CheckCircle2, GitBranch, AlertTriangle, Smartphone } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { APP_VERSION } from "../lib/app-config";
 import {
@@ -75,86 +75,98 @@ export function ActualizacionesScreen() {
   };
 
   const apkAsset = result?.release?.assets.find((a) => a.name.endsWith(".apk"));
+  const isChecking = status === "checking";
 
   return (
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Sistema</div>
           <h1 className="view__title">Actualizaciones</h1>
-          <p className="view__subtitle">Versión instalada y nuevas versiones del APK</p>
+          <p className="view__subtitle">Mantén tu app siempre al día</p>
         </div>
       </div>
 
-      <div className="panel">
-        <div className="upd-current">
-          <div className="upd-current__row">
-            <span className="upd-current__label">Versión instalada</span>
-            <strong className="upd-current__value">v{APP_VERSION}</strong>
+      <div className="upd-hero">
+        <div className="upd-hero__top">
+          <span className="upd-hero__icon" aria-hidden="true">
+            <Smartphone size={22} />
+          </span>
+          <div className="upd-hero__info">
+            <span className="upd-hero__label">Versión instalada</span>
+            <strong className="upd-hero__version">v{APP_VERSION}</strong>
+            {lastCheck ? (
+              <span className="upd-hero__meta">
+                Última comprobación · {formatDate(lastCheck, { withTime: true })}
+              </span>
+            ) : null}
           </div>
-          {lastCheck ? (
-            <div className="upd-current__meta">
-              Última comprobación: {formatDate(lastCheck, { withTime: true })}
-            </div>
-          ) : null}
         </div>
-
         <button
           type="button"
-          className="btn btn--primary"
+          className="btn btn--primary btn--block"
           onClick={() => void buscar()}
-          disabled={status === "checking"}
+          disabled={isChecking}
         >
-          <RefreshCw size={16} className={status === "checking" ? "spin" : ""} />
-          {status === "checking" ? "Buscando actualizaciones…" : "Buscar actualizaciones"}
+          <RefreshCw size={16} className={isChecking ? "spin" : ""} />
+          {isChecking ? "Buscando actualizaciones…" : "Buscar actualizaciones"}
         </button>
       </div>
 
-      {status === "checking" ? (
-        <div className="panel">
+      {isChecking ? (
+        <div className="panel panel--boxed">
           <EmptyStateUpd title="Comprobando…" text="Consultando GitHub Releases." />
         </div>
       ) : null}
 
       {status === "error" ? (
-        <div className="panel">
-          <div className="upd-error">
+        <div className="panel panel--boxed upd-card-error">
+          <div className="upd-card-error__icon">
             <AlertTriangle size={20} />
-            <div>
-              <strong>No se pudo comprobar</strong>
-              <p>{error ?? "Error desconocido"}</p>
-              <p className="upd-error__hint">
-                Asegúrate de que el repo <code>GITHUB_REPO</code> en src/lib/app-config.ts exista y tenga
-                releases publicadas.
-              </p>
-            </div>
+          </div>
+          <div className="upd-card-error__body">
+            <strong>No se pudo comprobar</strong>
+            <p>{error ?? "Error desconocido"}</p>
+            <p className="upd-card-error__hint">
+              Asegúrate de que el repo <code>GITHUB_REPO</code> en src/lib/app-config.ts exista y tenga
+              releases publicadas.
+            </p>
           </div>
         </div>
       ) : null}
 
       {status === "done" && result ? (
         result.updateAvailable ? (
-          <div className="panel">
-            <div className="upd-available">
-              <div className="upd-available__icon">
+          <div className="upd-download">
+            <div className="upd-download__head">
+              <span className="upd-download__icon" aria-hidden="true">
                 <Download size={20} />
-              </div>
+              </span>
               <div>
-                <div className="upd-available__title">
-                  Nueva versión v{result.latestVersion} disponible
-                </div>
-                {apkAsset ? (
-                  <div className="upd-available__meta">
-                    APK {apkAsset.name} · {formatBytes(apkAsset.size)}
-                  </div>
-                ) : (
-                  <div className="upd-available__meta">Publicado en GitHub Releases</div>
-                )}
-                {result.release?.published_at ? (
-                  <div className="upd-available__meta">
-                    Publicado el {formatDate(result.release.published_at, { withTime: true })}
-                  </div>
-                ) : null}
+                <div className="upd-download__title">Nueva versión v{result.latestVersion}</div>
+                <div className="upd-download__subtitle">Disponible para instalar</div>
               </div>
+            </div>
+
+            <div className="upd-specs">
+              <div className="upd-spec">
+                <span className="upd-spec__label">Archivo</span>
+                <strong className="upd-spec__value">{apkAsset?.name ?? "GitHub Releases"}</strong>
+              </div>
+              <div className="upd-spec">
+                <span className="upd-spec__label">Tamaño</span>
+                <strong className="upd-spec__value">
+                  {apkAsset ? formatBytes(apkAsset.size) : "—"}
+                </strong>
+              </div>
+              {result.release?.published_at ? (
+                <div className="upd-spec">
+                  <span className="upd-spec__label">Publicado</span>
+                  <strong className="upd-spec__value">
+                    {formatDate(result.release.published_at, { withTime: true })}
+                  </strong>
+                </div>
+              ) : null}
             </div>
 
             {result.release?.body ? (
@@ -178,7 +190,7 @@ export function ActualizacionesScreen() {
             ) : (
               <button
                 type="button"
-                className="btn btn--success"
+                className="btn btn--success btn--block"
                 onClick={() => void handleDownload()}
                 disabled={downloading || !apkAsset}
               >
@@ -187,27 +199,26 @@ export function ActualizacionesScreen() {
               </button>
             )}
             {!apkAsset && result.releaseUrl ? (
-              <p className="upd-available__hint">
+              <p className="upd-download__hint">
                 No se encontró un archivo .apk en la release. Se abrirá la página del release.
               </p>
             ) : null}
             {Capacitor.isNativePlatform() ? (
-              <p className="upd-available__hint">
+              <p className="upd-download__hint">
                 La descarga se hace en segundo plano y luego se abre el instalador de Android.
               </p>
             ) : null}
           </div>
         ) : (
-          <div className="panel">
-            <div className="upd-current">
-              <div className="upd-current__row">
-                <span className="upd-current__label">Última versión publicada</span>
-                <strong className="upd-current__value">v{result.latestVersion ?? APP_VERSION}</strong>
-              </div>
-            </div>
-            <div className="upd-up-to-date">
-              <CheckCircle2 size={20} />
-              <span>Tu aplicación está actualizada.</span>
+          <div className="upd-fresh">
+            <span className="upd-fresh__icon" aria-hidden="true">
+              <CheckCircle2 size={22} />
+            </span>
+            <div>
+              <strong className="upd-fresh__title">Tu aplicación está actualizada</strong>
+              <p className="upd-fresh__text">
+                v{result.latestVersion ?? APP_VERSION} es la última versión disponible.
+              </p>
             </div>
           </div>
         )

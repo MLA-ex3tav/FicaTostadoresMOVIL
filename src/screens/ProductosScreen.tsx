@@ -4,6 +4,7 @@ import {
   getPrecioLocal,
   loadCatalogo,
   setPrecioLocal,
+  subscribeCatalogo,
   syncAllPreciosToServer,
   type ProductoCatalogo,
 } from "../services/catalog";
@@ -16,6 +17,15 @@ function formatPrecio(valor: number): string {
     currency: "CLP",
     maximumFractionDigits: 0,
   }).format(valor);
+}
+
+function formatPrecioChileno(valor: number): string {
+  return new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(valor);
+}
+
+function parsePrecioChileno(texto: string): number {
+  const digits = texto.replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
 }
 
 export function ProductosScreen() {
@@ -42,6 +52,12 @@ export function ProductosScreen() {
 
   useEffect(() => {
     void cargar();
+    const unsubscribe = subscribeCatalogo((docs) => {
+      setProductos(docs);
+      setLoading(false);
+      setError(null);
+    });
+    return unsubscribe;
   }, []);
 
   const subirPrecios = async () => {
@@ -85,12 +101,18 @@ export function ProductosScreen() {
 
   const abrirProducto = (product: ProductoCatalogo) => {
     setSelected(product);
-    setPrecioEdit(String(getPrecioLocal(product)));
+    const precio = getPrecioLocal(product);
+    setPrecioEdit(precio > 0 ? formatPrecioChileno(precio) : "");
+  };
+
+  const cambiarPrecio = (texto: string) => {
+    const digits = texto.replace(/\D/g, "");
+    setPrecioEdit(digits ? formatPrecioChileno(Number(digits)) : "");
   };
 
   const guardarPrecio = () => {
     if (!selected) return;
-    const price = Math.max(0, Number(precioEdit) || 0);
+    const price = parsePrecioChileno(precioEdit);
     setPrecioLocal(selected.id, price);
     setSelected(null);
     showToast({
@@ -104,6 +126,7 @@ export function ProductosScreen() {
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Catálogo</div>
           <h1 className="view__title">Productos</h1>
           <p className="view__subtitle">Catálogo de tostadoras y accesorios</p>
         </div>
@@ -218,23 +241,22 @@ export function ProductosScreen() {
               </div>
               <div className="modal__field">
                 <label className="modal__label" htmlFor="precio-input">
-                  Precio local
+                  Precio
                 </label>
                 <input
                   id="precio-input"
                   className="modal__input"
-                  type="number"
-                  min={0}
-                  step={1}
+                  type="text"
                   inputMode="numeric"
+                  autoComplete="off"
                   value={precioEdit}
-                  onChange={(event) => setPrecioEdit(event.target.value)}
+                  onChange={(event) => cambiarPrecio(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") guardarPrecio();
                   }}
                 />
                 <span className="modal__hint">
-                  {formatPrecio(Math.max(0, Number(precioEdit) || 0))} · Se sincroniza con
+                  {formatPrecio(parsePrecioChileno(precioEdit))} · Se sincroniza con
                   Firebase: quedará disponible para cualquier instalación.
                 </span>
               </div>

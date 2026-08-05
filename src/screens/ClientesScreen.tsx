@@ -73,6 +73,7 @@ export function ClientesScreen() {
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Administración</div>
           <h1 className="view__title">Clientes</h1>
           <p className="view__subtitle">Historial y reincidencia por cliente</p>
         </div>

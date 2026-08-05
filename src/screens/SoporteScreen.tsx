@@ -35,16 +35,20 @@ export function SoporteScreen() {
     return subscribeSolicitudes(setState);
   }, []);
 
-  if (!state) return null;
-
-  const items = state.soporte.filter((item) => SOPORTE_ESTADOS.includes(getEstado(item, "")));
+  const items = state
+    ? state.soporte.filter((item) => SOPORTE_ESTADOS.includes(getEstado(item, "")))
+    : [];
 
   const abiertas = items.filter((item) => getEstado(item, "abierta") === "abierta");
   const enCurso = items.filter((item) => getEstado(item, "") === "en_curso");
   const resueltas = items.filter((item) => ["resuelta", "cerrada"].includes(getEstado(item, "")));
   const esteMes = items.filter((item) => isThisMonth(getSolicitudDate(item)));
 
-  setNavBadge("soporte", abiertas.length);
+  useEffect(() => {
+    setNavBadge("soporte", abiertas.length);
+  }, [abiertas.length]);
+
+  if (!state) return null;
 
   const actualizar = async (id: string, nextState: string) => {
     setItemState((prev) => ({ ...prev, [id]: { acting: nextState } }));
@@ -70,6 +74,7 @@ export function SoporteScreen() {
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Soporte</div>
           <h1 className="view__title">Soporte técnico</h1>
           <p className="view__subtitle">Solicitudes de servicio desde la web</p>
         </div>

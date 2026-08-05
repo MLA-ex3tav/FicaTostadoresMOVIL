@@ -47,6 +47,7 @@ export function EmpresaScreen({ onBack }: { onBack: () => void }) {
             <ArrowLeft size={18} />
           </button>
           <div>
+            <div className="view__eyebrow">Configuración</div>
             <h1 className="view__title">Datos de la empresa</h1>
             <p className="view__subtitle">Se usan en los PDF de cotizaciones que generas.</p>
           </div>

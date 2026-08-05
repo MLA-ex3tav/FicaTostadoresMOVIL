@@ -4,31 +4,32 @@ import {
   ArrowRight,
   Check,
   FileText,
-  Mail,
   Minus,
-  Package,
   Plus,
   Search,
-  Share2,
   Trash2,
 } from "lucide-react";
 import {
   getPrecioLocal,
   loadCatalogo,
+  subscribeCatalogo,
   type ProductoCatalogo,
 } from "../services/catalog";
-import { generarCotizacionPdf, type CotizacionPdf } from "../services/cotizacion-pdf";
+import { generarCotizacionPdf } from "../services/cotizacion-pdf";
 import { registrarOrdenTrabajo, type SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
-import { abrirGmail, abrirWhatsApp, compartirPdf, descargarPdf } from "../lib/share";
-import { openPdfViewer } from "../ui/pdf-viewer";
+import { openPdfActions } from "../ui/pdf-actions";
 import { getCompanyData } from "../lib/company";
 import { suggestAddresses } from "../lib/geo";
 import { EmptyState } from "../components/EmptyState";
-import { WhatsAppIcon } from "../components/WhatsAppIcon";
+import {
+  clearCotizacionDraft,
+  loadCotizacionDraft,
+  saveCotizacionDraft,
+} from "../services/cotizacion-draft";
 
 interface ItemSeleccionado {
-  product: ProductoCatalogo;
+  productId: string;
   quantity: number;
 }
 
@@ -95,13 +96,17 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   });
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [resultado, setResultado] = useState<CotizacionPdf | null>(null);
   const [addressFocused, setAddressFocused] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
+  const [draftBanner, setDraftBanner] = useState(false);
 
   useEffect(() => {
+    const unsubscribe = subscribeCatalogo((docs) => {
+      setProductos(docs);
+      setLoading(false);
+    });
+
     void (async () => {
-      setLoading(true);
       try {
         setProductos(await loadCatalogo());
       } catch (err) {
@@ -115,7 +120,86 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
         setLoading(false);
       }
     })();
+
+    return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const draft = loadCotizacionDraft();
+    if (!draft) return;
+
+    const hasContent =
+      draft.cliente?.name?.trim() ||
+      draft.cliente?.phone?.trim() ||
+      draft.cliente?.address?.trim() ||
+      draft.cliente?.rut?.trim() ||
+      draft.cliente?.email?.trim() ||
+      draft.cliente?.comuna?.trim() ||
+      draft.message?.trim() ||
+      Object.keys(draft.seleccion ?? {}).length > 0;
+    if (!hasContent) return;
+
+    setStep(Math.min(Math.max(draft.step ?? 1, 1), 3));
+    setCliente({
+      name: draft.cliente?.name ?? "",
+      phone: draft.cliente?.phone ?? "",
+      address: draft.cliente?.address ?? "",
+      rut: draft.cliente?.rut ?? "",
+      email: draft.cliente?.email ?? "",
+      comuna: draft.cliente?.comuna ?? "",
+    });
+    setMessage(draft.message ?? "");
+    setSeleccion(
+      Object.fromEntries(
+        Object.entries(draft.seleccion ?? {}).map(([id, quantity]) => [
+          id,
+          { productId: id, quantity: Math.max(1, Number(quantity) || 1) },
+        ]),
+      ),
+    );
+    setDraftBanner(true);
+  }, []);
+
+  useEffect(() => {
+    const hasContent =
+      cliente.name.trim() ||
+      cliente.phone.trim() ||
+      cliente.address.trim() ||
+      cliente.rut.trim() ||
+      cliente.email.trim() ||
+      cliente.comuna.trim() ||
+      message.trim() ||
+      Object.keys(seleccion).length > 0;
+    if (!hasContent) return;
+
+    saveCotizacionDraft({
+      step,
+      cliente,
+      message,
+      seleccion: Object.fromEntries(
+        Object.entries(seleccion).map(([id, item]) => [id, item.quantity]),
+      ),
+      updatedAt: Date.now(),
+    });
+  }, [step, cliente, message, seleccion]);
+
+  const descartarBorrador = () => {
+    clearCotizacionDraft();
+    setDraftBanner(false);
+    setStep(1);
+    setCliente({
+      name: "",
+      phone: "",
+      address: "",
+      rut: "",
+      email: "",
+      comuna: "",
+    });
+    setMessage("");
+    setSeleccion({});
+    setAddressFocused(false);
+    setActiveSuggestion(0);
+  };
 
   const filtered = useMemo(() => {
     const list = (productos ?? []).filter((product) => !seleccion[product.id]);
@@ -128,7 +212,16 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     );
   }, [productos, query, seleccion]);
 
-  const items = Object.values(seleccion);
+  const items = useMemo(() => {
+    const catalogo = productos ?? [];
+    const resultado: { product: ProductoCatalogo; quantity: number }[] = [];
+    for (const selected of Object.values(seleccion)) {
+      const product = catalogo.find((p) => p.id === selected.productId);
+      if (product) resultado.push({ product, quantity: selected.quantity });
+    }
+    return resultado;
+  }, [seleccion, productos]);
+
   const totalProductos = items.reduce((sum, item) => sum + item.quantity, 0);
   const totalCotizacion = items.reduce(
     (sum, item) => sum + getPrecioLocal(item.product) * item.quantity,
@@ -152,7 +245,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       return {
         ...prev,
         [product.id]: {
-          product,
+          productId: product.id,
           quantity: existing ? existing.quantity + 1 : 1,
         },
       };
@@ -178,23 +271,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       delete next[id];
       return next;
     });
-  };
-
-  const limpiar = () => {
-    setSeleccion({});
-    setCliente({
-      name: "",
-      phone: "",
-      address: "",
-      rut: "",
-      email: "",
-      comuna: "",
-    });
-    setMessage("");
-    setResultado(null);
-    setStep(1);
-    setAddressFocused(false);
-    setActiveSuggestion(0);
   };
 
   const irSiguiente = () => {
@@ -275,19 +351,26 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       }
 
       const pdf = await generarCotizacionPdf(item);
-      setResultado(pdf);
+
+      clearCotizacionDraft();
+      onBack();
+
+      openPdfActions(pdf);
 
       if (registro.ok && registro.data) {
         showToast({
-          title: "Orden de trabajo registrada",
-          message: `La OT ${registro.data.id} quedó guardada y aparece en Órdenes de Trabajo.`,
+          title: "Cotización generada",
+          message: `La OT ${registro.data.id} quedó registrada y el PDF está listo para compartir.`,
           tone: "success",
+          icon: "fileText",
+          durationMs: 8000,
         });
       } else {
         showToast({
           title: "PDF generado sin registrar",
           message: `No se pudo registrar la OT en la web (${registro.error ?? "desconocido"}). El PDF se generó igual.`,
           tone: "warning",
+          durationMs: 8000,
         });
       }
     } catch (error) {
@@ -299,18 +382,6 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       });
     } finally {
       setGenerating(false);
-    }
-  };
-
-  const compartir = async () => {
-    if (!resultado) return;
-    const ok = await compartirPdf(resultado);
-    if (!ok) {
-      showToast({
-        title: "Compartir no disponible",
-        message: "Tu navegador no soporta compartir archivos. Usa WhatsApp/Gmail y adjunta el PDF.",
-        tone: "info",
-      });
     }
   };
 
@@ -327,6 +398,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
             <ArrowLeft size={18} />
           </button>
           <div>
+            <div className="view__eyebrow">Operación</div>
             <h1 className="view__title">Nueva cotización</h1>
             <p className="view__subtitle">
               Paso {step} de 3 · {["Datos", "Productos", "Enviar"][step - 1]}
@@ -336,6 +408,22 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       </div>
 
       <StepIndicator current={step} />
+
+      {draftBanner ? (
+        <div className="draft-banner">
+          <div className="draft-banner__info">
+            <span className="draft-banner__dot" aria-hidden="true" />
+            <span>Borrador restaurado</span>
+          </div>
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={descartarBorrador}
+          >
+            <Trash2 size={12} /> Descartar
+          </button>
+        </div>
+      ) : null}
 
       {step === 1 ? (
         <>
@@ -371,9 +459,12 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   className="form-input"
                   type="text"
                   inputMode="text"
+                  autoComplete="off"
                   value={cliente.rut}
-                  onChange={(event) => setCliente({ ...cliente, rut: event.target.value })}
-                  placeholder="12.345.678-9"
+                  onChange={(event) =>
+                    setCliente({ ...cliente, rut: event.target.value.replace(/\D/g, "") })
+                  }
+                  placeholder="123456789"
                 />
               </div>
               <div className="form-field">
@@ -617,51 +708,17 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
             </div>
           </section>
 
-          {resultado ? (
-            <section className="form-section">
-              <div className="result-card">
-                <div className="result-card__title">
-                  <FileText size={16} /> {resultado.fileName}
-                </div>
-                <div className="result-card__sub">Elige cómo enviarlo:</div>
-                <div className="result-card__actions">
-                  <button type="button" className="btn btn--success" onClick={() => void compartir()}>
-                    <Share2 size={16} /> Compartir
-                  </button>
-                  <button type="button" className="btn btn--whatsapp" onClick={() => void abrirWhatsApp(resultado)}>
-                    <WhatsAppIcon size={16} /> WhatsApp
-                  </button>
-                  <button type="button" className="btn btn--info" onClick={() => void abrirGmail(resultado)}>
-                    <Mail size={16} /> Gmail
-                  </button>
-                  <button type="button" className="btn btn--secondary" onClick={() => void openPdfViewer(resultado)}>
-                    <Package size={16} /> Ver
-                  </button>
-                  <button type="button" className="btn btn--secondary" onClick={() => void descargarPdf(resultado)}>
-                    <Package size={16} /> Descargar
-                  </button>
-                </div>
-                <button type="button" className="btn btn--secondary btn--block" onClick={limpiar}>
-                  Crear otra cotización
-                </button>
-              </div>
-            </section>
-          ) : (
-            <div className="wizard-actions">
-              <button type="button" className="btn btn--secondary" onClick={() => setStep(2)}>
-                <ArrowLeft size={16} /> Atrás
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={() => void generar()}
-                disabled={generating}
-              >
-                <FileText size={16} />
-                {generating ? "Generando PDF…" : "Generar PDF"}
-              </button>
-            </div>
-          )}
+          <div className="wizard-actions">
+            <button
+              type="button"
+              className="btn btn--primary btn--block"
+              onClick={() => void generar()}
+              disabled={generating}
+            >
+              <FileText size={18} />
+              {generating ? "Generando PDF…" : "Generar PDF de la cotización"}
+            </button>
+          </div>
         </>
       ) : null}
 

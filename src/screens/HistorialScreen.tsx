@@ -80,6 +80,7 @@ export function HistorialScreen() {
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Operación</div>
           <h1 className="view__title">Historial</h1>
           <p className="view__subtitle">Cotizaciones y OT cerradas</p>
         </div>

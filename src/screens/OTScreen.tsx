@@ -1,19 +1,21 @@
 import { useEffect, useState } from "react";
-import { FileText, Play } from "lucide-react";
+import { FileText, Play, Trash2 } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import { actualizarEstadoSolicitud } from "../lib/web-api";
 import {
+  borrarSolicitud,
   getSolicitudDate,
   refreshSolicitudes,
   subscribeSolicitudes,
   type SolicitudesState,
 } from "../services/solicitudes";
-import { generarOtPdf, descargarOtPdf } from "../services/ot-pdf";
-import { openPdfViewer } from "../ui/pdf-viewer";
+import { generarOtPdf } from "../services/ot-pdf";
 import { showToast } from "../ui/toast";
+import { openPdfActions } from "../ui/pdf-actions";
 import { StatsGrid, StatCard } from "../components/StatCard";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   OT_ESTADO_LABELS,
   OT_ESTADOS,
@@ -63,6 +65,8 @@ interface ItemState {
 export function OTScreen() {
   const [state, setState] = useState<SolicitudesState | null>(null);
   const [itemState, setItemState] = useState<Record<string, ItemState>>({});
+  const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
@@ -84,14 +88,13 @@ export function OTScreen() {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], generating: true } }));
     try {
       const pdf = await generarOtPdf(item);
-      openPdfViewer(pdf);
       showToast({
         title: "PDF de OT Generado",
-        message: `Se ha abierto ${pdf.fileName} para visualización.`,
+        message: `${pdf.fileName} listo para compartir.`,
         tone: "success",
         icon: "fileText",
-        actions: [{ label: "Descargar PDF", onClick: () => descargarOtPdf(pdf), primary: true }],
       });
+      openPdfActions(pdf);
     } catch (error) {
       console.error("Error al generar PDF de OT:", error);
       showToast({
@@ -125,10 +128,31 @@ export function OTScreen() {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], advancing: false } }));
   };
 
+  const eliminar = async (item: SolicitudRemota) => {
+    setDeleting(true);
+    const result = await borrarSolicitud(item.id);
+    setDeleting(false);
+    if (!result.ok) {
+      showToast({
+        title: "Error al eliminar",
+        message: result.error ?? "No se pudo eliminar la orden de trabajo.",
+        tone: "error",
+      });
+      return;
+    }
+    setConfirmDelete(null);
+    showToast({
+      title: "Orden Eliminada",
+      message: "La orden de trabajo fue eliminada.",
+      tone: "success",
+    });
+  };
+
   return (
     <div className="screen">
       <div className="view__header">
         <div>
+          <div className="view__eyebrow">Producción</div>
           <h1 className="view__title">Órdenes de Trabajo</h1>
           <p className="view__subtitle">Producción y seguimiento de fabricación</p>
         </div>
@@ -176,7 +200,7 @@ export function OTScreen() {
                     {next ? (
                       <button
                         type="button"
-                        className="btn btn--success btn--sm"
+                        className="btn btn--stage btn--sm"
                         onClick={() => void avanzar(item, next)}
                         disabled={local.advancing}
                       >
@@ -188,8 +212,18 @@ export function OTScreen() {
                       className="btn btn--secondary btn--sm"
                       onClick={() => void verPdf(item)}
                       disabled={local.generating}
+                      aria-label="Ver PDF"
                     >
-                      <FileText size={14} /> {local.generating ? "Generando…" : "PDF"}
+                      <FileText size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--danger btn--sm"
+                      onClick={() => setConfirmDelete(item)}
+                      disabled={local.generating || local.advancing}
+                      aria-label="Eliminar orden"
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </li>
@@ -198,6 +232,19 @@ export function OTScreen() {
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Eliminar orden de trabajo"
+        message={`¿Seguro que deseas eliminar la OT de ${confirmDelete ? String(confirmDelete.clientName ?? "este cliente") : ""}? Esta acción no se puede deshacer.`}
+        busy={deleting}
+        onConfirm={() => {
+          if (confirmDelete) void eliminar(confirmDelete);
+        }}
+        onCancel={() => {
+          if (!deleting) setConfirmDelete(null);
+        }}
+      />
     </div>
   );
 }

@@ -1,4 +1,10 @@
-import { collection, getDocs, limit, query } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+} from "firebase/firestore";
 import { getDb } from "../lib/firebase";
 import { getConfig } from "../lib/config";
 
@@ -9,14 +15,30 @@ export interface ProductoCatalogo {
   category?: string;
   categoria?: string;
   capacity?: string;
+  listPrice?: number;
   price?: number;
   precio?: number;
-  listPrice?: number;
   [key: string]: unknown;
 }
 
+/**
+ * El precio vive en Firestore (campos listPrice/price/precio), que es la fuente
+ * de verdad compartida con la app de escritorio (v2) y la web. El localStorage
+ * solo se usa como cola de escrituras pendientes (offline) que se reenvía al
+ * servidor; nunca se usa para mostrar el precio.
+ */
 const LOCAL_PRICES_KEY = "fica-product-prices";
+
 let catalogo: ProductoCatalogo[] = [];
+let unsubscribeSnapshot: (() => void) | null = null;
+
+type CatalogoListener = (productos: ProductoCatalogo[]) => void;
+const listeners = new Set<CatalogoListener>();
+
+function emit(): void {
+  const snapshot = getCatalogo();
+  listeners.forEach((listener) => listener(snapshot));
+}
 
 function readLocalPrices(): Record<string, number> {
   try {
@@ -52,9 +74,8 @@ export function getCatalogo(): ProductoCatalogo[] {
   return [...catalogo];
 }
 
+/** Precio vigente del catálogo en tiempo real (listPrice > price > precio). */
 export function getPrecioLocal(producto: ProductoCatalogo): number {
-  const override = readLocalPrices()[producto.id];
-  if (override !== undefined) return override;
   return (
     numberValue(producto.listPrice, producto.price, producto.precio, producto.unitPrice) ?? 0
   );
@@ -74,16 +95,40 @@ function syncPriceToServer(productId: string, price: number): void {
       Authorization: `Bearer ${appSecret}`,
     },
     body: JSON.stringify({ price }),
-  }).catch((error) => {
-    console.warn("[catalog] No se pudo sincronizar el precio con el servidor", error);
-  });
+  })
+    .then((res) => {
+      if (res.ok) {
+        const prices = readLocalPrices();
+        if (prices[productId] !== undefined) {
+          delete prices[productId];
+          writeLocalPrices(prices);
+        }
+      }
+    })
+    .catch((error) => {
+      console.warn("[catalog] No se pudo sincronizar el precio con el servidor", error);
+    });
 }
 
+/**
+ * Guarda un precio y lo sincroniza con Firestore (vía la API protegida), para
+ * que quede disponible en tiempo real en cualquier otra instalación.
+ */
 export function setPrecioLocal(productId: string, price: number): void {
-  const prices = readLocalPrices();
   const clean = Math.max(0, Number.isFinite(price) ? price : 0);
+
+  const prices = readLocalPrices();
   prices[productId] = clean;
   writeLocalPrices(prices);
+
+  const product = catalogo.find((entry) => entry.id === productId);
+  if (product) {
+    product.listPrice = clean;
+    product.price = clean;
+    product.precio = clean;
+  }
+  emit();
+
   syncPriceToServer(productId, clean);
 }
 
@@ -93,7 +138,7 @@ export interface SyncResult {
   failed: { id: string; reason: string }[];
 }
 
-/** Sube todos los precios locales a Firebase (vía la API protegida). */
+/** Reenvía al servidor los precios pendientes (editados sin conexión). */
 export async function syncAllPreciosToServer(): Promise<SyncResult> {
   const { webUrl, appSecret } = getConfig();
   const prices = readLocalPrices();
@@ -126,7 +171,13 @@ export async function syncAllPreciosToServer(): Promise<SyncResult> {
         },
       );
 
-      if (!res.ok) {
+      if (res.ok) {
+        const pending = readLocalPrices();
+        if (pending[id] !== undefined) {
+          delete pending[id];
+          writeLocalPrices(pending);
+        }
+      } else {
         failed.push({ id, reason: `HTTP ${res.status}` });
       }
     } catch (error) {
@@ -154,5 +205,49 @@ export function findProducto(productId: unknown, name: unknown): ProductoCatalog
 export async function loadCatalogo(): Promise<ProductoCatalogo[]> {
   const snapshot = await getDocs(query(collection(getDb(), "productos"), limit(100)));
   catalogo = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ProductoCatalogo));
+  emit();
   return getCatalogo();
+}
+
+/**
+ * Mantiene una única suscripción en tiempo real al catálogo de Firestore
+ * (onSnapshot). Se activa automáticamente al primer subscriptor y devuelve una
+ * función para cancelarla.
+ */
+export function startCatalogoLive(): () => void {
+  if (unsubscribeSnapshot) {
+    return unsubscribeSnapshot;
+  }
+
+  const source = query(collection(getDb(), "productos"), limit(100));
+
+  unsubscribeSnapshot = onSnapshot(
+    source,
+    (snapshot) => {
+      catalogo = snapshot.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() }) as ProductoCatalogo,
+      );
+      emit();
+    },
+    (error) => {
+      console.warn("[catalog] No se pudo suscribir al catálogo en tiempo real", error);
+    },
+  );
+
+  return unsubscribeSnapshot;
+}
+
+/**
+ * Suscribe un listener a los cambios del catálogo (en tiempo real) y asegura
+ * que la suscripción de Firestore esté activa. Retorna una función para
+ * cancelar la suscripción del listener.
+ */
+export function subscribeCatalogo(listener: CatalogoListener): () => void {
+  listeners.add(listener);
+  startCatalogoLive();
+  listener(getCatalogo());
+
+  return () => {
+    listeners.delete(listener);
+  };
 }
