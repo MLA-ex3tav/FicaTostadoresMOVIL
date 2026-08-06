@@ -1,5 +1,12 @@
 import type { SolicitudRemota } from "../lib/web-api";
 import type { PillVariant } from "../components/StatusPill";
+import { getProductColorById } from "../lib/product-colors";
+
+export interface ProductoColorResumen {
+  colorId: string | null;
+  color: string | null;
+  hex: string | null;
+}
 
 export const ESTADO_LABELS: Record<string, string> = {
   pendiente: "Pendiente",
@@ -96,6 +103,33 @@ export function resumirProductos(item: SolicitudRemota): string {
 
   const extra = names.length - 1;
   return extra > 0 ? `${names[0]} +${extra}` : names[0];
+}
+
+/** Extrae los colores seleccionados de los productos de una cotización (desde la web). */
+export function coloresProductos(item: SolicitudRemota): ProductoColorResumen[] {
+  if (!Array.isArray(item.products)) return [];
+
+  return item.products
+    .map((product) => {
+      if (!product || typeof product !== "object") return null;
+      const record = product as Record<string, unknown>;
+      const colorId =
+        typeof record.selectedColorId === "string" && record.selectedColorId.trim()
+          ? record.selectedColorId.trim()
+          : null;
+      const color =
+        typeof record.selectedColor === "string" && record.selectedColor.trim()
+          ? record.selectedColor.trim()
+          : null;
+      const defined = getProductColorById(colorId);
+      return {
+        colorId,
+        color,
+        hex: defined?.hex ?? null,
+      };
+    })
+    .filter((entry): entry is ProductoColorResumen => entry !== null)
+    .filter((entry) => entry.colorId !== null || entry.color !== null);
 }
 
 export function estadoLabel(estado: string): string {

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Sun, Moon } from "lucide-react";
 import type { ViewId } from "./types";
 import { BottomNav } from "./components/BottomNav";
 import { ToastHost } from "./components/ToastHost";
@@ -15,15 +14,13 @@ import { ReportesScreen } from "./screens/ReportesScreen";
 import { SoporteScreen } from "./screens/SoporteScreen";
 import { ConexionesScreen } from "./screens/ConexionesScreen";
 import { ActualizacionesScreen } from "./screens/ActualizacionesScreen";
-import { getTheme, toggleTheme, type Theme } from "./ui/theme";
-import { APP_VERSION } from "./lib/app-config";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { refreshSolicitudes } from "./services/solicitudes";
 
 function renderScreen(view: ViewId, setView: (view: ViewId) => void): React.JSX.Element | null {
   switch (view) {
     case "cotizaciones":
-      return <CotizacionesScreen />;
+      return <CotizacionesScreen onCreate={() => setView("nueva")} />;
     case "nueva":
       return <NuevaCotizacionScreen onBack={() => setView("cotizaciones")} />;
     case "ot":
@@ -49,49 +46,20 @@ function renderScreen(view: ViewId, setView: (view: ViewId) => void): React.JSX.
 
 export function App() {
   const [view, setView] = useState<ViewId>("cotizaciones");
-  const [theme, setTheme] = useState<Theme>(() => getTheme());
 
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
-      if (detail && detail in { actualizaciones: 1 }) {
-        setView("actualizaciones");
+      if (detail && detail in { actualizaciones: 1, cotizaciones: 1, soporte: 1 }) {
+        setView(detail as ViewId);
       }
     };
     window.addEventListener("app:navigate", handler);
     return () => window.removeEventListener("app:navigate", handler);
   }, []);
 
-  const handleThemeToggle = () => {
-    setTheme(toggleTheme());
-  };
-
   return (
     <div className="app-shell">
-      <header className="mobile-header">
-        <div className="mobile-header__brand">
-          <img src="/assets/logo.webp" alt="Fica Tostadores" className="mobile-header__logo" />
-          <span className="mobile-header__title">Fica Tostadores</span>
-          <span className="app-version-badge">v{APP_VERSION}</span>
-        </div>
-        <button
-          className="theme-toggle"
-          id="theme-toggle"
-          type="button"
-          title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-          aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-          aria-pressed={theme === "dark"}
-          onClick={handleThemeToggle}
-        >
-          <span className="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true">
-            <Sun size={18} />
-          </span>
-          <span className="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true">
-            <Moon size={18} />
-          </span>
-        </button>
-      </header>
-
       <main className="content">
         <PullToRefresh onRefresh={refreshSolicitudes}>
           <div key={view} className="view-transition">

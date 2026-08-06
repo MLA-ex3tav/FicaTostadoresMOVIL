@@ -250,6 +250,8 @@ export interface RegistroOrdenTrabajoPayload {
     name?: string;
     quantity: number;
     unitPrice?: number;
+    selectedColor?: string | null;
+    selectedColorId?: string | null;
   }>;
 }
 

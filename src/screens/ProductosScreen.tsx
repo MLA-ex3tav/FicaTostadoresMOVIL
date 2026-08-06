@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { CloudUpload, Package, RefreshCw, Search, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { CloudUpload, Package, RefreshCw, Search } from "lucide-react";
 import {
   getPrecioLocal,
   loadCatalogo,
@@ -216,22 +217,12 @@ export function ProductosScreen() {
         )}
       </div>
 
-      {selected ? (
-        <div className="modal" role="dialog" aria-modal="true" aria-label={`Editar precio de ${selected.name ?? selected.modelo ?? "producto"}`}>
-          <div className="modal__backdrop" onClick={() => setSelected(null)} />
-          <div className="modal__panel">
-            <header className="modal__header">
-              <span className="modal__title">Editar precio</span>
-              <button
-                type="button"
-                className="modal__close"
-                aria-label="Cerrar"
-                onClick={() => setSelected(null)}
-              >
-                <X size={20} />
-              </button>
-            </header>
-            <div className="modal__body">
+      {selected ? createPortal(
+        <div className="more-sheet" role="dialog" aria-modal="true" aria-label={`Editar precio de ${selected.name ?? selected.modelo ?? "producto"}`}>
+          <div className="more-sheet__backdrop" onClick={() => setSelected(null)} />
+          <div className="more-sheet__panel">
+            <div className="modal-sheet__body">
+              <div className="modal-sheet__title">Editar precio</div>
               <div>
                 <div className="card-list__title">{String(selected.name ?? selected.modelo ?? "Sin nombre")}</div>
                 <div className="modal__meta">
@@ -270,7 +261,8 @@ export function ProductosScreen() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

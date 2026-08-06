@@ -7,12 +7,18 @@ export interface CotizacionDraftCliente {
   comuna: string;
 }
 
+export interface CotizacionDraftItem {
+  quantity: number;
+  selectedColorId?: string;
+  selectedColor?: string;
+}
+
 export interface CotizacionDraft {
   step: number;
   cliente: CotizacionDraftCliente;
   message: string;
-  /** productId -> cantidad */
-  seleccion: Record<string, number>;
+  /** productId -> selección (cantidad y color opcional) */
+  seleccion: Record<string, CotizacionDraftItem | number>;
   updatedAt: number;
 }
 

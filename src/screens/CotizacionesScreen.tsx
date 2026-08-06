@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, Check, X, Trash2, Pencil } from "lucide-react";
+import { Plus, RefreshCw, ChevronRight } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   aprobarCotizacion,
@@ -8,9 +8,11 @@ import {
   isSolicitudPendiente,
   rechazarCotizacion,
   subscribeSolicitudes,
+  esCotizacionSoloLocal,
+  eliminarSolicitudVisible,
   type SolicitudesState,
 } from "../services/solicitudes";
-import { generarCotizacionPdf } from "../services/cotizacion-pdf";
+import { obtenerCotizacionPdf } from "../services/cotizacion-pdf";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
 import { setNavBadge } from "../lib/badges";
@@ -19,6 +21,8 @@ import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditarCotizacion } from "../components/EditarCotizacion";
+import { CotizacionActionsSheet } from "../components/CotizacionActionsSheet";
+import { ProductColorSwatches } from "../components/ProductColorSwatches";
 import {
   estadoLabel,
   estadoPillVariant,
@@ -27,6 +31,7 @@ import {
   isThisWeek,
   isToday,
   resumirProductos,
+  coloresProductos,
 } from "./shared";
 
 interface ItemState {
@@ -34,12 +39,13 @@ interface ItemState {
   acting: string | null;
 }
 
-export function CotizacionesScreen() {
+export function CotizacionesScreen({ onCreate }: { onCreate: () => void }) {
   const [state, setState] = useState<SolicitudesState | null>(null);
   const [itemState, setItemState] = useState<Record<string, ItemState>>({});
   const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState<SolicitudRemota | null>(null);
+  const [actionsFor, setActionsFor] = useState<SolicitudRemota | null>(null);
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
@@ -62,13 +68,15 @@ export function CotizacionesScreen() {
   const verPdf = async (item: SolicitudRemota) => {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], generating: true } }));
     try {
-      const pdf = await generarCotizacionPdf(item);
-      showToast({
-        title: "PDF Generado",
-        message: `${pdf.fileName} listo para compartir.`,
-        tone: "success",
-        icon: "fileText",
-      });
+      const { pdf, cacheado } = await obtenerCotizacionPdf(item);
+      if (!cacheado) {
+        showToast({
+          title: "PDF Generado",
+          message: `${pdf.fileName} listo para compartir.`,
+          tone: "success",
+          icon: "fileText",
+        });
+      }
       openPdfActions(pdf);
     } catch (error) {
       console.error("Error al generar PDF:", error);
@@ -82,7 +90,7 @@ export function CotizacionesScreen() {
     }
   };
 
-  const aprobar = async (item: SolicitudRemota) => {
+  const aprobarItem = async (item: SolicitudRemota) => {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], acting: "aprobar" } }));
     const result = await aprobarCotizacion(item.id);
     if (!result.ok) {
@@ -100,13 +108,15 @@ export function CotizacionesScreen() {
       tone: "success",
     });
     try {
-      const pdf = await generarCotizacionPdf(item);
-      showToast({
-        title: "PDF de Orden de Trabajo Generado",
-        message: `Documento ${pdf.fileName} listo para compartir.`,
-        tone: "success",
-        icon: "fileText",
-      });
+      const { pdf, cacheado } = await obtenerCotizacionPdf(item);
+      if (!cacheado) {
+        showToast({
+          title: "PDF de Orden de Trabajo Generado",
+          message: `Documento ${pdf.fileName} listo para compartir.`,
+          tone: "success",
+          icon: "fileText",
+        });
+      }
       openPdfActions(pdf);
     } catch (error) {
       console.error("No se pudo generar el PDF de la OT", error);
@@ -114,7 +124,7 @@ export function CotizacionesScreen() {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], acting: null } }));
   };
 
-  const rechazar = async (item: SolicitudRemota) => {
+  const rechazarItem = async (item: SolicitudRemota) => {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], acting: "rechazar" } }));
     const result = await rechazarCotizacion(item.id);
     if (!result.ok) {
@@ -136,6 +146,29 @@ export function CotizacionesScreen() {
 
   const eliminar = async (item: SolicitudRemota) => {
     setDeleting(true);
+
+    // Creada localmente y aún no registrada en la web: se borra solo en el dispositivo.
+    if (esCotizacionSoloLocal(item.id)) {
+      eliminarSolicitudVisible(item.id);
+      setDeleting(false);
+      setConfirmDelete(null);
+      showToast({
+        title: "Cotización Eliminada",
+        message: "La solicitud fue eliminada de este dispositivo.",
+        tone: "success",
+      });
+      return;
+    }
+
+    // Desaparece de la lista al instante, sin esperar la respuesta del servidor.
+    eliminarSolicitudVisible(item.id);
+    setConfirmDelete(null);
+    showToast({
+      title: "Cotización Eliminada",
+      message: "La solicitud fue eliminada.",
+      tone: "success",
+    });
+
     const result = await borrarSolicitud(item.id);
     setDeleting(false);
     if (!result.ok) {
@@ -144,14 +177,8 @@ export function CotizacionesScreen() {
         message: result.error ?? "No se pudo eliminar la cotización.",
         tone: "error",
       });
-      return;
+      // Si el borrado en el servidor falla, se trae de vuelta en el próximo refresh.
     }
-    setConfirmDelete(null);
-    showToast({
-      title: "Cotización Eliminada",
-      message: "La solicitud fue eliminada.",
-      tone: "success",
-    });
   };
 
   return (
@@ -188,94 +215,99 @@ export function CotizacionesScreen() {
                   ? "Consultando la web."
                   : "Cuando llegue una solicitud desde la web aparecerá aquí automáticamente."
             }
-          />
+          >
+            {!state.loading && !state.error ? (
+              <button type="button" className="btn btn--primary" onClick={onCreate}>
+                <Plus size={16} /> Crear cotización
+              </button>
+            ) : null}
+          </EmptyState>
         ) : (
           <ul className="card-list">
             {items.map((item) => {
               const estado = getEstado(item, "pendiente");
-              const esEditable = !["aprobada_ot", "rechazada", "completada"].includes(estado);
-              const local = itemState[item.id] ?? { generating: false, acting: null };
 
               return (
-                <li key={item.id} className="card-list__item">
-                  <div className="card-list__top">
-                    <div className="card-list__title">{String(item.clientName ?? "Sin nombre")}</div>
-                    <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
-                  </div>
-                  <div className="card-list__meta">
-                    {String(item.clientPhone ?? item.clientEmail ?? "—")}
-                  </div>
-                  <div className="card-list__meta">{resumirProductos(item)}</div>
-                  <div className="card-list__meta">{formatFecha(getSolicitudDate(item))}</div>
-                  <div className="card-list__actions">
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--sm"
-                      onClick={() => setEditing(item)}
-                      aria-label="Editar cotización"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--sm"
-                      onClick={() => void verPdf(item)}
-                      disabled={local.generating}
-                      aria-label="Ver PDF"
-                    >
-                      <FileText size={14} />
-                    </button>
-                    {esEditable ? (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn--success btn--sm"
-                          onClick={() => void aprobar(item)}
-                          disabled={local.acting !== null}
-                        >
-                          {local.acting === "aprobar" ? (
-                            <span className="btn__spinner" aria-hidden="true" />
-                          ) : (
-                            <>
-                              <Check size={14} /> Aprobar
-                            </>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--danger btn--sm"
-                          onClick={() => void rechazar(item)}
-                          disabled={local.acting !== null}
-                        >
-                          {local.acting === "rechazar" ? (
-                            <span className="btn__spinner" aria-hidden="true" />
-                          ) : (
-                            <>
-                              <X size={14} /> Rechazar
-                            </>
-                          )}
-                        </button>
-                      </>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn--danger btn--sm"
-                      onClick={() => setConfirmDelete(item)}
-                      disabled={local.generating || local.acting !== null}
-                      aria-label="Eliminar cotización"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                <li key={item.id} className="card-list__item card-list__item--tap">
+                  <button
+                    type="button"
+                    className="card-list__btn"
+                    onClick={() => setActionsFor(item)}
+                    aria-label={`Opciones de cotización de ${String(item.clientName ?? "sin nombre")}`}
+                  >
+                    <div className="card-list__top">
+                      <div className="card-list__title">{String(item.clientName ?? "Sin nombre")}</div>
+                      <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
+                    </div>
+                    <div className="card-list__meta">
+                      {String(item.clientPhone ?? item.clientEmail ?? "—")}
+                    </div>
+                    <div className="card-list__meta">{resumirProductos(item)}</div>
+                    <ProductColorSwatches colors={coloresProductos(item)} />
+                    <div className="card-list__meta card-list__meta--row">
+                      <span>{formatFecha(getSolicitudDate(item))}</span>
+                      <span className="card-list__chevron" aria-hidden="true">
+                        <ChevronRight size={16} />
+                      </span>
+                    </div>
+                  </button>
                 </li>
               );
             })}
           </ul>
         )}
+        {state.pendientesSincronizar > 0 ? (
+          <div className="sync-banner" role="status">
+            <span className="sync-banner__icon" aria-hidden="true">
+              <RefreshCw size={14} />
+            </span>
+            <span>
+              {state.pendientesSincronizar}{" "}
+              {state.pendientesSincronizar === 1
+                ? "cotización guardada localmente"
+                : "cotizaciones guardadas localmente"}
+              , sincronizando con el servidor…
+            </span>
+          </div>
+        ) : null}
         {state.error && items.length > 0 ? (
           <div className="conn-updated">Última actualización con errores: {state.error}</div>
         ) : null}
       </div>
+
+      {actionsFor ? (
+        <CotizacionActionsSheet
+          item={actionsFor}
+          esEditable={
+            !["aprobada_ot", "rechazada", "completada"].includes(
+              getEstado(actionsFor, "pendiente"),
+            )
+          }
+          busy={itemState[actionsFor.id]?.generating ?? false}
+          acting={itemState[actionsFor.id]?.acting ?? null}
+          onClose={() => setActionsFor(null)}
+          onVerPdf={() => {
+            setActionsFor(null);
+            void verPdf(actionsFor);
+          }}
+          onEditar={() => {
+            setActionsFor(null);
+            setEditing(actionsFor);
+          }}
+          onAprobar={() => {
+            setActionsFor(null);
+            void aprobarItem(actionsFor);
+          }}
+          onRechazar={() => {
+            setActionsFor(null);
+            void rechazarItem(actionsFor);
+          }}
+          onEliminar={() => {
+            setActionsFor(null);
+            setConfirmDelete(actionsFor);
+          }}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={confirmDelete !== null}

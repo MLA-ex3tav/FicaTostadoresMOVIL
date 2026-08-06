@@ -96,6 +96,57 @@ export interface CotizacionPdf {
   item: SolicitudRemota;
 }
 
+/** Fingerprint del contenido de la cotización para saber si un PDF guardado sigue vigente. */
+function fingerprint(item: SolicitudRemota): string {
+  const productos = (Array.isArray(item.products) ? item.products : [])
+    .map((product) => {
+      const record = product && typeof product === "object"
+        ? (product as Record<string, unknown>)
+        : {};
+      return [
+        record.productId ?? record.id ?? "",
+        record.name ?? "",
+        record.quantity ?? "",
+        record.price ?? record.precio ?? record.unitPrice ?? "",
+      ].join("|");
+    })
+    .join("#");
+  return JSON.stringify({
+    id: String(item.id),
+    name: item.clientName,
+    rut: item.clientRut,
+    address: item.clientAddress,
+    comuna: item.clientComuna,
+    message: item.message,
+    productos,
+  });
+}
+
+/** Caché en memoria: reutiliza el PDF si la cotización no cambió. */
+const pdfCache = new Map<string, { fingerprint: string; pdf: CotizacionPdf }>();
+
+/**
+ * Genera (o reutiliza) el PDF de la cotización. Si el PDF ya existe para el mismo
+ * contenido, devuelve el guardado sin regenerarlo, marcando `cacheado: true`.
+ */
+export async function obtenerCotizacionPdf(
+  item: SolicitudRemota,
+): Promise<{ pdf: CotizacionPdf; cacheado: boolean }> {
+  const finger = fingerprint(item);
+  const cached = pdfCache.get(item.id);
+  if (cached && cached.fingerprint === finger) {
+    return { pdf: cached.pdf, cacheado: true };
+  }
+  const pdf = await generarCotizacionPdf(item);
+  pdfCache.set(item.id, { fingerprint: finger, pdf });
+  return { pdf, cacheado: false };
+}
+
+/** Invalida el PDF cacheado de una cotización (tras edición local). */
+export function invalidarCotizacionPdf(id: string): void {
+  pdfCache.delete(id);
+}
+
 const IVA_RATE = 0.19;
 
 /** Genera el PDF de la cotización replicando el diseño oficial de FICA. */

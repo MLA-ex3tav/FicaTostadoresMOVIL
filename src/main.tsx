@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { startHeartbeat } from "./services/heartbeat";
 import { startSolicitudesPolling } from "./services/solicitudes";
+import { initLocalNotifications } from "./services/notifications";
 import { checkAppUpdates } from "./services/updater";
 import { setTheme } from "./ui/theme";
 import { getTheme } from "./ui/theme";
@@ -12,6 +13,7 @@ setTheme(getTheme());
 
 startHeartbeat();
 startSolicitudesPolling();
+initLocalNotifications();
 
 window.setTimeout(() => {
   void checkAppUpdates();

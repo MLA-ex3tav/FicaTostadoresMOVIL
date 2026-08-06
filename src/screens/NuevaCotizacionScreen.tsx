@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   getPrecioLocal,
@@ -20,7 +22,19 @@ import { registrarOrdenTrabajo, type SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
 import { getCompanyData } from "../lib/company";
+import {
+  DEFAULT_PRODUCT_COLOR_ID,
+  getProductColorById,
+  getProductColorLabel,
+  PRODUCT_COLORS,
+} from "../lib/product-colors";
 import { EmptyState } from "../components/EmptyState";
+import {
+  agregarCotizacionLocal,
+  confirmarCotizacionLocal,
+  refreshSolicitudes,
+  sincronizarPendientes,
+} from "../services/solicitudes";
 import {
   clearCotizacionDraft,
   loadCotizacionDraft,
@@ -30,6 +44,8 @@ import {
 interface ItemSeleccionado {
   productId: string;
   quantity: number;
+  selectedColorId?: string;
+  selectedColor?: string;
 }
 
 interface StepIndicatorProps {
@@ -96,6 +112,8 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
   const [draftBanner, setDraftBanner] = useState(false);
+  const [nameError, setNameError] = useState(false);
+  const [collapsing, setCollapsing] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeCatalogo((docs) => {
@@ -148,10 +166,20 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     setMessage(draft.message ?? "");
     setSeleccion(
       Object.fromEntries(
-        Object.entries(draft.seleccion ?? {}).map(([id, quantity]) => [
-          id,
-          { productId: id, quantity: Math.max(1, Number(quantity) || 1) },
-        ]),
+        Object.entries(draft.seleccion ?? {}).map(([id, value]) => {
+          const item = (
+            typeof value === "number" ? { quantity: value } : value
+          ) as Partial<ItemSeleccionado>;
+          return [
+            id,
+            {
+              productId: id,
+              quantity: Math.max(1, Number(item?.quantity) || 1),
+              selectedColorId: item?.selectedColorId,
+              selectedColor: item?.selectedColor,
+            },
+          ];
+        }),
       ),
     );
     setDraftBanner(true);
@@ -174,7 +202,14 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       cliente,
       message,
       seleccion: Object.fromEntries(
-        Object.entries(seleccion).map(([id, item]) => [id, item.quantity]),
+        Object.entries(seleccion).map(([id, item]) => [
+          id,
+          {
+            quantity: item.quantity,
+            ...(item.selectedColorId ? { selectedColorId: item.selectedColorId } : {}),
+            ...(item.selectedColor ? { selectedColor: item.selectedColor } : {}),
+          },
+        ]),
       ),
       updatedAt: Date.now(),
     });
@@ -197,10 +232,10 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   };
 
   const filtered = useMemo(() => {
-    const list = (productos ?? []).filter((product) => !seleccion[product.id]);
+    const list = productos ?? [];
     const term = query.trim().toLowerCase();
-    if (!term) return list;
     return list.filter((product) =>
+      !term ||
       `${product.name ?? ""} ${product.modelo ?? ""} ${product.categoria ?? product.category ?? ""}`
         .toLowerCase()
         .includes(term),
@@ -209,10 +244,22 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
 
   const items = useMemo(() => {
     const catalogo = productos ?? [];
-    const resultado: { product: ProductoCatalogo; quantity: number }[] = [];
+    const resultado: {
+      product: ProductoCatalogo;
+      quantity: number;
+      selectedColorId?: string;
+      selectedColor?: string;
+    }[] = [];
     for (const selected of Object.values(seleccion)) {
       const product = catalogo.find((p) => p.id === selected.productId);
-      if (product) resultado.push({ product, quantity: selected.quantity });
+      if (product) {
+        resultado.push({
+          product,
+          quantity: selected.quantity,
+          selectedColorId: selected.selectedColorId,
+          selectedColor: selected.selectedColor,
+        });
+      }
     }
     return resultado;
   }, [seleccion, productos]);
@@ -231,39 +278,62 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
         [product.id]: {
           productId: product.id,
           quantity: existing ? existing.quantity + 1 : 1,
+          selectedColorId: existing?.selectedColorId ?? DEFAULT_PRODUCT_COLOR_ID,
+          selectedColor: existing?.selectedColor ?? getProductColorLabel(DEFAULT_PRODUCT_COLOR_ID) ?? undefined,
+        },
+      };
+    });
+  };
+
+  const cambiarColor = (id: string, colorId: string) => {
+    setSeleccion((prev) => {
+      const existing = prev[id];
+      if (!existing) return prev;
+      const color = getProductColorById(colorId);
+      return {
+        ...prev,
+        [id]: {
+          ...existing,
+          selectedColorId: colorId,
+          selectedColor: color?.name ?? existing.selectedColor,
         },
       };
     });
   };
 
   const quitar = (id: string) => {
-    setSeleccion((prev) => {
-      const existing = prev[id];
-      if (!existing) return prev;
-      if (existing.quantity <= 1) {
+    const existing = seleccion[id];
+    if (!existing) return;
+    if (existing.quantity <= 1) {
+      colapsarYQuitar(id);
+      return;
+    }
+    setSeleccion((prev) => ({
+      ...prev,
+      [id]: { ...existing, quantity: existing.quantity - 1 },
+    }));
+  };
+
+  const colapsarYQuitar = (id: string) => {
+    if (collapsing) return;
+    setCollapsing(id);
+    window.setTimeout(() => {
+      setSeleccion((prev) => {
         const next = { ...prev };
         delete next[id];
         return next;
-      }
-      return { ...prev, [id]: { ...existing, quantity: existing.quantity - 1 } };
-    });
+      });
+      setCollapsing(null);
+    }, 300);
   };
 
   const eliminar = (id: string) => {
-    setSeleccion((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    colapsarYQuitar(id);
   };
 
   const irSiguiente = () => {
     if (step === 1 && !cliente.name.trim()) {
-      showToast({
-        title: "Falta el nombre del cliente",
-        message: "Completa el nombre o razón social para continuar.",
-        tone: "warning",
-      });
+      setNameError(true);
       return;
     }
     if (step === 2 && items.length === 0) {
@@ -274,65 +344,131 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       });
       return;
     }
+    setNameError(false);
     setStep((current) => Math.min(current + 1, 3));
+  };
+
+  const registrar = async (): Promise<{
+    item: SolicitudRemota;
+    registro: Awaited<ReturnType<typeof registrarOrdenTrabajo>>;
+    localId: string;
+  }> => {
+    const direccionCompleta = cliente.address.trim();
+    const destino = direccionCompleta || "Por acordar con el cliente";
+    const company = getCompanyData();
+    const origen = company
+      ? [company.address, company.city, company.region].filter(Boolean).join(", ") || company.country
+      : "Padre Las Casas, Chile";
+
+    const productsPayload = items.map(({ product, quantity, selectedColorId, selectedColor }) => ({
+      productId: product.id,
+      name: product.name ?? product.modelo ?? "Producto",
+      quantity,
+      unitPrice: getPrecioLocal(product),
+      selectedColorId,
+      selectedColor,
+    }));
+
+    const item: SolicitudRemota = {
+      id: `COT-${Date.now().toString().slice(-6)}`,
+      clientName: cliente.name.trim(),
+      clientPhone: cliente.phone.trim(),
+      clientRut: cliente.rut.trim(),
+      clientEmail: cliente.email.trim(),
+      clientComuna: cliente.comuna.trim(),
+      clientCountry: "Chile",
+      clientAddress: direccionCompleta,
+      createdAt: new Date().toISOString(),
+      shipping: {
+        origin: origen,
+        originZip: company.zip ?? "",
+        destination: destino,
+      },
+      products: productsPayload,
+      message: message.trim(),
+      estado: "pendiente",
+    };
+
+    const localId = item.id;
+
+    // Aparece de inmediato en la lista de cotizaciones.
+    agregarCotizacionLocal(item);
+
+    const registro = await registrarOrdenTrabajo({
+      clientName: cliente.name.trim(),
+      clientPhone: cliente.phone.trim(),
+      clientRut: cliente.rut.trim(),
+      clientEmail: cliente.email.trim(),
+      clientComuna: cliente.comuna.trim(),
+      clientAddress: direccionCompleta,
+      message: message.trim(),
+      shipping: {
+        origin: origen,
+        originZip: company.zip ?? "",
+        destination: destino,
+      },
+      products: productsPayload,
+    });
+
+    if (registro.ok && registro.data) {
+      // Cuando la web confirma el registro, la versión remota sobreescribe la local.
+      item.id = registro.data.id;
+      item.estado = registro.data.estado;
+      confirmarCotizacionLocal(localId, {
+        id: registro.data.id,
+        estado: registro.data.estado,
+      });
+      // Trae la versión de Firebase de inmediato, sin esperar el próximo poll.
+      void refreshSolicitudes();
+    } else {
+      // Queda como pendiente de sincronizar; se reintenta en segundo plano.
+      window.setTimeout(() => {
+        void sincronizarPendientes();
+      }, 2000);
+    }
+
+    return { item, registro, localId };
+  };
+
+  const guardar = async () => {
+    setGenerating(true);
+    try {
+      const { registro } = await registrar();
+
+      clearCotizacionDraft();
+      onBack();
+
+      if (registro.ok && registro.data) {
+        showToast({
+          title: "Cotización guardada",
+          message: `La cotización ${registro.data.id} quedó registrada en la web.`,
+          tone: "success",
+          durationMs: 5000,
+        });
+      } else {
+        showToast({
+          title: "Cotización guardada localmente",
+          message: "Se guardó en este dispositivo y se sincronizará con la web.",
+          tone: "warning",
+          durationMs: 5000,
+        });
+      }
+    } catch (error) {
+      console.error("Error al guardar cotización:", error);
+      showToast({
+        title: "Error al guardar",
+        message: "No se pudo crear la cotización.",
+        tone: "error",
+      });
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const generar = async () => {
     setGenerating(true);
     try {
-      const direccionCompleta = cliente.address.trim();
-      const destino = direccionCompleta || "Por acordar con el cliente";
-      const company = getCompanyData();
-      const origen = company
-        ? [company.address, company.city, company.region].filter(Boolean).join(", ") || company.country
-        : "Padre Las Casas, Chile";
-
-      const productsPayload = items.map(({ product, quantity }) => ({
-        productId: product.id,
-        name: product.name ?? product.modelo ?? "Producto",
-        quantity,
-        unitPrice: getPrecioLocal(product),
-      }));
-
-      const item: SolicitudRemota = {
-        id: `COT-${Date.now().toString().slice(-6)}`,
-        clientName: cliente.name.trim(),
-        clientPhone: cliente.phone.trim(),
-        clientRut: cliente.rut.trim(),
-        clientEmail: cliente.email.trim(),
-        clientComuna: cliente.comuna.trim(),
-        clientCountry: "Chile",
-        clientAddress: direccionCompleta,
-        shipping: {
-          origin: origen,
-          originZip: company.zip ?? "",
-          destination: destino,
-        },
-        products: productsPayload,
-        message: message.trim(),
-        estado: "pendiente",
-      };
-
-      const registro = await registrarOrdenTrabajo({
-        clientName: cliente.name.trim(),
-        clientPhone: cliente.phone.trim(),
-        clientRut: cliente.rut.trim(),
-        clientEmail: cliente.email.trim(),
-        clientComuna: cliente.comuna.trim(),
-        clientAddress: direccionCompleta,
-        message: message.trim(),
-        shipping: {
-          origin: origen,
-          originZip: company.zip ?? "",
-          destination: destino,
-        },
-        products: productsPayload,
-      });
-
-      if (registro.ok && registro.data) {
-        item.id = registro.data.id;
-        item.estado = registro.data.estado;
-      }
+      const { item, registro } = await registrar();
 
       const pdf = await generarCotizacionPdf(item);
 
@@ -396,8 +532,13 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       {draftBanner ? (
         <div className="draft-banner">
           <div className="draft-banner__info">
-            <span className="draft-banner__dot" aria-hidden="true" />
-            <span>Borrador restaurado</span>
+            <span className="draft-banner__icon" aria-hidden="true">
+              <FileText size={16} />
+            </span>
+            <span className="draft-banner__text">
+              <strong>Borrador restaurado</strong>
+              <span>Continuaste donde lo dejaste la última vez.</span>
+            </span>
           </div>
           <button
             type="button"
@@ -417,12 +558,20 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                 <label className="form-label" htmlFor="nc-name">Nombre / Razón social *</label>
                 <input
                   id="nc-name"
-                  className="form-input"
+                  className={`form-input${nameError ? " form-input--error" : ""}`}
                   type="text"
                   value={cliente.name}
-                  onChange={(event) => setCliente({ ...cliente, name: event.target.value })}
+                  onChange={(event) => {
+                    setCliente({ ...cliente, name: event.target.value });
+                    if (nameError && event.target.value.trim()) setNameError(false);
+                  }}
                   placeholder="Ej. Juan Pérez"
                 />
+                {nameError ? (
+                  <span className="form-error" role="alert">
+                    Completa el nombre o razón social para continuar.
+                  </span>
+                ) : null}
               </div>
               <div className="form-field">
                 <label className="form-label" htmlFor="nc-phone">Teléfono</label>
@@ -497,127 +646,207 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
         </>
       ) : null}
 
-      {step === 2 ? (
-        <>
-          {items.length > 0 ? (
-            <div className="selection-summary">
-              <div className="selection-summary__info">
-                <span className="selection-summary__count">
-                  {totalProductos} producto{totalProductos === 1 ? "" : "s"} seleccionado{totalProductos === 1 ? "" : "s"}
+      {step === 2 ? createPortal(
+        <div className="editor-overlay">
+          <div className="editor" role="dialog" aria-modal="true" aria-label="Productos de la cotización">
+            <header className="editor__header">
+              <div className="editor__header-info">
+                <span className="view__eyebrow">Nueva cotización</span>
+                <h2 className="editor__title">Productos</h2>
+              </div>
+              <button
+                type="button"
+                className="btn btn--secondary btn--icon"
+                onClick={() => setStep(1)}
+                aria-label="Volver a datos del cliente"
+              >
+                <ArrowLeft size={18} />
+              </button>
+            </header>
+
+            <div className="editor__body">
+              <section className="form-section">
+                <div className="form-section__row">
+                  <h3 className="form-section__title">Productos</h3>
+                  <span className="editor__count">
+                    {totalProductos} producto{totalProductos === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="search-field">
+                  <span className="search-field__icon" aria-hidden="true">
+                    <Search size={22} />
+                  </span>
+                  <input
+                    className="search-input"
+                    type="search"
+                    placeholder="Buscar productos…"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  {query ? (
+                    <button
+                      type="button"
+                      className="search-field__clear"
+                      onClick={() => setQuery("")}
+                      aria-label="Limpiar búsqueda"
+                    >
+                      <X size={16} />
+                    </button>
+                  ) : null}
+                </div>
+
+                {loading && productos === null ? (
+                  <EmptyState title="Cargando catálogo…" text="Consultando Firestore." />
+                ) : productos && productos.length === 0 ? (
+                  <EmptyState
+                    title="Catálogo vacío"
+                    text="No se encontraron productos en Firestore para cotizar."
+                  />
+                ) : filtered.length === 0 ? (
+                  <EmptyState title="Sin resultados" text={`No se encontraron productos para "${query}".`} />
+                ) : (
+                  <ul className="card-list">
+                    {filtered.map((product) => {
+                      const isSelected = Boolean(seleccion[product.id]);
+                      const isCollapsing = collapsing === product.id;
+                      return (
+                      <li
+                        key={product.id}
+                        className={`card-list__item${isSelected ? " card-list__item--selected" : " card-list__item--tap"}${isCollapsing ? " card-list__item--closing" : ""}`}
+                      >
+                        {isSelected ? (
+                          <button
+                            type="button"
+                            className="card-list__btn card-list__btn--static"
+                            onClick={() => eliminar(product.id)}
+                            disabled={isCollapsing}
+                            aria-label={`Deseleccionar ${product.name ?? "producto"}`}
+                          >
+                            <div className="card-list__top">
+                              <div className="card-list__title">
+                                {String(product.name ?? product.modelo ?? "Sin nombre")}
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn--danger btn--sm"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  eliminar(product.id);
+                                }}
+                                aria-label={`Quitar ${product.name ?? "producto"}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                            <div className="card-list__meta">
+                              {product.modelo ? String(product.modelo) : "—"} ·{" "}
+                              {String(product.categoria ?? product.category ?? "—")}
+                            </div>
+                            <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="card-list__btn"
+                            onClick={() => agregar(product)}
+                          >
+                            <div className="card-list__top">
+                              <div className="card-list__title">
+                                {String(product.name ?? product.modelo ?? "Sin nombre")}
+                              </div>
+                              <span className="btn btn--primary btn--sm">
+                                <Plus size={14} /> Agregar
+                              </span>
+                            </div>
+                            <div className="card-list__meta">
+                              {product.modelo ? String(product.modelo) : "—"} ·{" "}
+                              {String(product.categoria ?? product.category ?? "—")}
+                            </div>
+                            <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
+                          </button>
+                        )}
+
+                        {seleccion[product.id] ? (
+                          <div className="card-list__expand">
+                            <div className="qty-stepper">
+                              <button
+                                type="button"
+                                className="btn btn--secondary btn--sm"
+                                onClick={() => quitar(product.id)}
+                                aria-label="Disminuir cantidad"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="qty-stepper__value">{seleccion[product.id].quantity}</span>
+                              <button
+                                type="button"
+                                className="btn btn--secondary btn--sm"
+                                onClick={() => agregar(product)}
+                                aria-label="Aumentar cantidad"
+                              >
+                                <Plus size={14} />
+                              </button>
+                              <span className="qty-stepper__total">
+                                {formatPrecio(getPrecioLocal(product) * seleccion[product.id].quantity)}
+                              </span>
+                            </div>
+                            <div className="color-picker">
+                              <span
+                                className="color-picker__current"
+                                style={{ backgroundColor: getProductColorById(seleccion[product.id].selectedColorId)?.hex }}
+                                aria-hidden="true"
+                              />
+                              <div className="color-picker__dots" role="radiogroup" aria-label={`Color de ${product.name ?? "producto"}`}>
+                                {PRODUCT_COLORS.map((color) => {
+                                  const isSelected =
+                                    (seleccion[product.id].selectedColorId ?? DEFAULT_PRODUCT_COLOR_ID) === color.id;
+                                  return (
+                                    <button
+                                      key={color.id}
+                                      type="button"
+                                      role="radio"
+                                      aria-checked={isSelected}
+                                      aria-label={`Color ${color.name}`}
+                                      className={`color-picker__dot${isSelected ? " color-picker__dot--active" : ""}`}
+                                      style={{ backgroundColor: color.hex }}
+                                      onClick={() => cambiarColor(product.id, color.id)}
+                                    />
+                                  );
+                                })}
+                              </div>
+                              <span className="color-picker__label">
+                                {getProductColorLabel(seleccion[product.id].selectedColorId) ?? seleccion[product.id].selectedColor ?? "Color"}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+                      </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            </div>
+
+            <footer className="editor__footer">
+              <div className="editor__total">
+                <span className="editor__total-label">
+                  Total ({items.length} producto{items.length === 1 ? "" : "s"})
                 </span>
-                <span className="selection-summary__total">
-                  Total · {formatPrecio(totalCotizacion)}
-                </span>
+                <strong className="editor__total-value">{formatPrecio(totalCotizacion)}</strong>
               </div>
               <button
                 type="button"
                 className="btn btn--primary"
                 onClick={irSiguiente}
+                disabled={items.length === 0}
               >
-                Continuar <ArrowRight size={18} />
+                <Check size={18} strokeWidth={2.5} /> Listo
               </button>
-            </div>
-          ) : null}
-
-          {items.length > 0 ? (
-              <section className="form-section">
-                <h2 className="form-section__title">
-                  Seleccionados ({totalProductos} producto{totalProductos === 1 ? "" : "s"})
-                </h2>
-              <ul className="card-list">
-                {items.map(({ product, quantity }) => (
-                  <li key={product.id} className="card-list__item">
-                    <div className="card-list__top">
-                      <div className="card-list__title">
-                        {String(product.name ?? product.modelo ?? "Producto")}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn--danger btn--sm"
-                        onClick={() => eliminar(product.id)}
-                        aria-label={`Quitar ${product.name ?? "producto"}`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <div className="card-list__meta">{formatPrecio(getPrecioLocal(product))}</div>
-                    <div className="qty-stepper">
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        onClick={() => quitar(product.id)}
-                        aria-label="Disminuir cantidad"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="qty-stepper__value">{quantity}</span>
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        onClick={() => agregar(product)}
-                        aria-label="Aumentar cantidad"
-                      >
-                        <Plus size={14} />
-                      </button>
-                      <span className="qty-stepper__total">
-                        {formatPrecio(getPrecioLocal(product) * quantity)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          <section className="form-section">
-            <h2 className="form-section__title">Elige productos</h2>
-            <div className="search-field">
-              <span className="search-field__icon" aria-hidden="true">
-                <Search size={16} />
-              </span>
-              <input
-                className="search-input"
-                type="search"
-                placeholder="Buscar producto…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-
-            {loading && productos === null ? (
-              <EmptyState title="Cargando catálogo…" text="Consultando Firestore." />
-            ) : productos && productos.length === 0 ? (
-              <EmptyState
-                title="Catálogo vacío"
-                text="No se encontraron productos en Firestore para cotizar."
-              />
-            ) : filtered.length === 0 ? (
-              <EmptyState title="Sin resultados" text={`No se encontraron productos para "${query}".`} />
-            ) : (
-              <ul className="card-list">
-                {filtered.map((product) => (
-                  <li key={product.id} className="card-list__item card-list__item--tap">
-                    <button type="button" className="card-list__btn" onClick={() => agregar(product)}>
-                      <div className="card-list__top">
-                        <div className="card-list__title">
-                          {String(product.name ?? product.modelo ?? "Sin nombre")}
-                        </div>
-                        <span className="btn btn--primary btn--sm">
-                          <Plus size={14} /> Agregar
-                        </span>
-                      </div>
-                      <div className="card-list__meta">
-                        {product.modelo ? String(product.modelo) : "—"} ·{" "}
-                        {String(product.categoria ?? product.category ?? "—")}
-                      </div>
-                      <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </>
+            </footer>
+          </div>
+        </div>,
+        document.body,
       ) : null}
 
       {step === 3 ? (
@@ -651,10 +880,15 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   {totalProductos} producto{totalProductos === 1 ? "" : "s"}
                 </strong>
               </div>
-              {items.map(({ product, quantity }) => (
+              {items.map(({ product, quantity, selectedColorId, selectedColor }) => (
                 <div key={product.id} className="wizard-summary__row">
                   <span>
                     {String(product.name ?? product.modelo ?? "Producto")} × {quantity}
+                    {getProductColorLabel(selectedColorId)
+                      ? ` · ${getProductColorLabel(selectedColorId)}`
+                      : selectedColor
+                        ? ` · ${selectedColor}`
+                        : ""}
                   </span>
                   <strong>{formatPrecio(getPrecioLocal(product) * quantity)}</strong>
                 </div>
@@ -666,7 +900,16 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
             </div>
           </section>
 
-          <div className="wizard-actions">
+          <div className="wizard-actions wizard-actions--column">
+            <button
+              type="button"
+              className="btn btn--secondary btn--block"
+              onClick={() => void guardar()}
+              disabled={generating}
+            >
+              <Check size={18} />
+              Guardar
+            </button>
             <button
               type="button"
               className="btn btn--primary btn--block"
@@ -674,7 +917,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               disabled={generating}
             >
               <FileText size={18} />
-              {generating ? "Generando PDF…" : "Generar PDF de la cotización"}
+              {generating ? "Generando PDF…" : "Guardar y generar PDF"}
             </button>
           </div>
         </>
