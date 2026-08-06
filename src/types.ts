@@ -5,7 +5,6 @@ export type ViewId =
   | "historial"
   | "clientes"
   | "productos"
-  | "reportes"
   | "soporte"
   | "conexiones"
   | "empresa"

@@ -22,27 +22,17 @@ export function ActualizacionesScreen() {
     null,
   );
 
-  const buscar = useCallback(async () => {
-    setStatus("checking");
-    setError(null);
-    const res = await checkForUpdates();
-    setResult(res);
-    setStatus(res.error ? "error" : "done");
-    setError(res.error);
-    setLastCheck(new Date().toISOString());
-  }, []);
+  const handleDownload = async (customRes?: UpdateCheckResult) => {
+    const target = customRes ?? result;
+    if (!target?.apkUrl) return;
 
-  useEffect(() => {
-    void buscar();
-  }, [buscar]);
+    const asset = target.release?.assets.find((a) => a.name.endsWith(".apk"));
+    const fileName = asset?.name ?? "fica-tostadores.apk";
 
-  const handleDownload = async () => {
-    if (!result?.apkUrl) return;
     setDownloading(true);
     setProgress({ loaded: 0, total: 0, pct: 0 });
     try {
-      const fileName = apkAsset?.name ?? "fica-tostadores.apk";
-      const outcome = await downloadAndInstallApk(result.apkUrl, fileName, (loaded, total) => {
+      const outcome = await downloadAndInstallApk(target.apkUrl, fileName, (loaded, total) => {
         setProgress({ loaded, total, pct: total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0 });
       });
 
@@ -50,15 +40,15 @@ export function ActualizacionesScreen() {
         setProgress({ loaded: 0, total: 0, pct: 100 });
         showToast({
           title: "Descarga completada",
-          message: "El APK se descargó. Confirma la instalación cuando Android lo solicite.",
+          message: "Se activó el instalador nativo del celular para actualizar o abrir la aplicación.",
           tone: "success",
-          durationMs: 10000,
+          durationMs: 12000,
         });
       } else if (outcome === "downloaded") {
         setProgress({ loaded: 0, total: 0, pct: 100 });
         showToast({
           title: "APK descargado",
-          message: "El archivo se descargó. Ábrelo para instalarlo.",
+          message: "El archivo se descargó. Ábrelo para instalar la actualización.",
           tone: "success",
         });
       } else {
@@ -73,6 +63,24 @@ export function ActualizacionesScreen() {
       setDownloading(false);
     }
   };
+
+  const buscar = useCallback(async () => {
+    setStatus("checking");
+    setError(null);
+    const res = await checkForUpdates();
+    setResult(res);
+    setStatus(res.error ? "error" : "done");
+    setError(res.error);
+    setLastCheck(new Date().toISOString());
+
+    if (res.updateAvailable && res.apkUrl) {
+      void handleDownload(res);
+    }
+  }, []);
+
+  useEffect(() => {
+    void buscar();
+  }, [buscar]);
 
   const apkAsset = result?.release?.assets.find((a) => a.name.endsWith(".apk"));
   const isChecking = status === "checking";

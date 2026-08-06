@@ -24,6 +24,34 @@ export const ESTADO_LABELS: Record<string, string> = {
   entregada: "Entregada",
 };
 
+export const CATEGORIA_FALLA_LABELS: Record<string, string> = {
+  falla_operativa: "Falla Operativa",
+  falla_electrica: "Falla Eléctrica",
+  falla_mecanica: "Falla Mecánica",
+  error_software: "Error de Software",
+  mantenimiento: "Mantenimiento Preventivo",
+  repuestos: "Solicitud de Repuestos",
+  repuesto: "Solicitud de Repuestos",
+  garantia: "Garantía",
+  instalacion: "Instalación / Configuración",
+  consulta: "Consulta General",
+  general: "General",
+};
+
+export function formatCategoryLabel(category?: unknown): string {
+  if (category === null || category === undefined) return "Consulta General";
+  const str = String(category).trim();
+  if (!str) return "Consulta General";
+  const clean = str.toLowerCase();
+  if (CATEGORIA_FALLA_LABELS[clean]) {
+    return CATEGORIA_FALLA_LABELS[clean];
+  }
+  return clean
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export const OT_ESTADO_LABELS: Record<string, string> = {
   aprobada_ot: "Por iniciar",
   en_produccion: "En producción",
@@ -32,6 +60,13 @@ export const OT_ESTADO_LABELS: Record<string, string> = {
 };
 
 export const OT_ESTADOS = ["aprobada_ot", "en_produccion", "terminada", "entregada"];
+
+export const OT_ESTADO_VARIANT: Record<string, "done" | "pending" | "progress"> = {
+  entregada: "done",
+  en_produccion: "progress",
+  terminada: "done",
+  aprobada_ot: "pending",
+};
 
 export function getEstado(item: SolicitudRemota, fallback: string): string {
   return typeof item.estado === "string" && item.estado.trim()
@@ -45,6 +80,17 @@ export function formatFecha(date: Date | null): string {
     day: "2-digit",
     month: "short",
     year: "numeric",
+  });
+}
+
+export function formatFechaHora(date: Date | null): string {
+  if (!date) return "—";
+  return date.toLocaleString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 

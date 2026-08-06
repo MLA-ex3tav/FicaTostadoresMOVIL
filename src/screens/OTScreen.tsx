@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { FileText, Play, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Clock, Package, ChevronRight } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import { actualizarEstadoSolicitud } from "../lib/web-api";
 import {
@@ -12,24 +12,15 @@ import {
 import { generarOtPdf } from "../services/ot-pdf";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
-import { StatsGrid, StatCard } from "../components/StatCard";
-import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { OTActionsSheet } from "../components/OTActionsSheet";
 import {
-  OT_ESTADO_LABELS,
   OT_ESTADOS,
-  formatFecha,
+  formatFechaHora,
   getEstado,
   resumirProductos,
 } from "./shared";
-
-const OT_ESTADO_VARIANT: Record<string, "done" | "pending" | "progress"> = {
-  entregada: "done",
-  en_produccion: "progress",
-  terminada: "progress",
-  aprobada_ot: "pending",
-};
 
 function siguienteEstado(estado: string): string | null {
   switch (estado) {
@@ -37,8 +28,6 @@ function siguienteEstado(estado: string): string | null {
       return "en_produccion";
     case "en_produccion":
       return "terminada";
-    case "terminada":
-      return "entregada";
     default:
       return null;
   }
@@ -50,8 +39,6 @@ function siguienteLabel(estado: string): string {
       return "Iniciar producción";
     case "en_produccion":
       return "Marcar terminada";
-    case "terminada":
-      return "Marcar entregada";
     default:
       return "—";
   }
@@ -62,11 +49,20 @@ interface ItemState {
   advancing: boolean;
 }
 
+const LONG_PRESS_MS = 500;
+
+const OT_PIPELINE_STEPS = [
+  { id: "aprobada_ot", label: "Por iniciar" },
+  { id: "en_produccion", label: "En producción" },
+  { id: "terminada", label: "Terminada" },
+];
+
 export function OTScreen() {
   const [state, setState] = useState<SolicitudesState | null>(null);
   const [itemState, setItemState] = useState<Record<string, ItemState>>({});
   const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [actionsFor, setActionsFor] = useState<SolicitudRemota | null>(null);
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
@@ -78,11 +74,6 @@ export function OTScreen() {
     const estado = getEstado(item, "");
     return OT_ESTADOS.includes(estado);
   });
-
-  const porIniciar = items.filter((item) => item.estado === "aprobada_ot");
-  const enProduccion = items.filter((item) => item.estado === "en_produccion");
-  const terminadas = items.filter((item) => item.estado === "terminada");
-  const entregadas = items.filter((item) => item.estado === "entregada");
 
   const verPdf = async (item: SolicitudRemota) => {
     setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], generating: true } }));
@@ -158,13 +149,6 @@ export function OTScreen() {
         </div>
       </div>
 
-      <StatsGrid>
-        <StatCard label="Por iniciar" value={String(porIniciar.length)} tone="warning" />
-        <StatCard label="En producción" value={String(enProduccion.length)} tone="info" />
-        <StatCard label="Terminadas" value={String(terminadas.length)} tone="accent" />
-        <StatCard label="Entregadas" value={String(entregadas.length)} tone="success" />
-      </StatsGrid>
-
       <div className="panel">
         {items.length === 0 ? (
           <EmptyState
@@ -180,52 +164,78 @@ export function OTScreen() {
             {items.map((item) => {
               const estado = getEstado(item, "aprobada_ot");
               const next = siguienteEstado(estado);
-              const local = itemState[item.id] ?? { generating: false, advancing: false };
+              const currentStepIdx = OT_PIPELINE_STEPS.findIndex((s) => s.id === estado);
 
               return (
-                <li key={item.id} className="card-list__item">
-                  <div className="card-list__top">
-                    <div className="card-list__title">{String(item.clientName ?? "Sin nombre")}</div>
-                    <StatusPill
-                      label={OT_ESTADO_LABELS[estado] ?? estado}
-                      variant={OT_ESTADO_VARIANT[estado] ?? "pending"}
-                    />
-                  </div>
-                  <div className="card-list__meta">
-                    {String(item.clientPhone ?? item.clientEmail ?? "—")}
-                  </div>
-                  <div className="card-list__meta">{resumirProductos(item)}</div>
-                  <div className="card-list__meta">{formatFecha(getSolicitudDate(item))}</div>
-                  <div className="card-list__actions">
+                <li key={item.id} className={`card-list__item ot-card ot-card--${estado}`}>
+                  <OTLongPressButton
+                    item={item}
+                    onTap={() => {
+                      const n = siguienteEstado(getEstado(item, "aprobada_ot"));
+                      if (n) void avanzar(item, n);
+                    }}
+                    onLongPress={() => setActionsFor(item)}
+                  >
+                    <div className="cot-card__top">
+                      <div className="cot-card__client">
+                        <span className="cot-card__name">
+                          {String(item.clientName ?? "Sin nombre")}
+                        </span>
+                        <span className="cot-card__contact">
+                          {String(item.clientPhone ?? item.clientEmail ?? "—")}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Stepper visual de producción */}
+                    <div className="ot-pipeline" aria-label="Etapa de producción">
+                      {OT_PIPELINE_STEPS.map((step, idx) => {
+                        const isCurrent = estado === step.id;
+                        const isPassed = idx <= currentStepIdx;
+                        return (
+                          <div
+                            key={step.id}
+                            className={`ot-pipeline__step ${isCurrent ? "ot-pipeline__step--active" : ""} ${isPassed ? "ot-pipeline__step--passed" : ""}`}
+                          >
+                            <div className="ot-pipeline__bar" />
+                            <span className="ot-pipeline__dot" />
+                            <span className="ot-pipeline__label">{step.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="cot-card__divider" aria-hidden="true" />
+
+                    <div className="cot-card__row cot-card__row--products">
+                      <span className="cot-card__row-icon" aria-hidden="true">
+                        <Package size={15} strokeWidth={1.75} />
+                      </span>
+                      <span className="cot-card__products-text">{resumirProductos(item)}</span>
+                    </div>
+
+                    <div className="cot-card__date">
+                      <div className="cot-card__row">
+                        <span className="cot-card__row-icon" aria-hidden="true">
+                          <Clock size={14} strokeWidth={1.75} />
+                        </span>
+                        <span>{formatFechaHora(getSolicitudDate(item))}</span>
+                      </div>
+                      <span className="cot-card__chevron" aria-hidden="true">
+                        <ChevronRight size={16} />
+                      </span>
+                    </div>
+
                     {next ? (
-                      <button
-                        type="button"
-                        className="btn btn--stage btn--sm"
-                        onClick={() => void avanzar(item, next)}
-                        disabled={local.advancing}
-                      >
-                        <Play size={14} /> {local.advancing ? "Actualizando…" : siguienteLabel(estado)}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--sm"
-                      onClick={() => void verPdf(item)}
-                      disabled={local.generating}
-                      aria-label="Ver PDF"
-                    >
-                      <FileText size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--danger btn--sm"
-                      onClick={() => setConfirmDelete(item)}
-                      disabled={local.generating || local.advancing}
-                      aria-label="Eliminar orden"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                      <div className="ot-card__next-sub">
+                        Toca para cambiar estado · Mantén presionado para opciones
+                      </div>
+                    ) : (
+                      <div className="ot-card__next-sub ot-card__next-sub--completed">
+                        ✓ Orden terminada · Mantén presionado para opciones
+                      </div>
+                    )}
+                  </OTLongPressButton>
                 </li>
               );
             })}
@@ -245,6 +255,90 @@ export function OTScreen() {
           if (!deleting) setConfirmDelete(null);
         }}
       />
+
+      {actionsFor ? (
+        <OTActionsSheet
+          item={actionsFor}
+          next={siguienteEstado(getEstado(actionsFor, "aprobada_ot")) ?? undefined}
+          nextLabel={siguienteLabel(getEstado(actionsFor, "aprobada_ot"))}
+          busy={itemState[actionsFor.id]?.generating ?? false}
+          advancing={itemState[actionsFor.id]?.advancing ?? false}
+          onClose={() => setActionsFor(null)}
+          onAvanzar={() => {
+            const next = siguienteEstado(getEstado(actionsFor, "aprobada_ot"));
+            setActionsFor(null);
+            if (next) void avanzar(actionsFor, next);
+          }}
+          onVerPdf={() => {
+            setActionsFor(null);
+            void verPdf(actionsFor);
+          }}
+          onEliminar={() => {
+            setActionsFor(null);
+            setConfirmDelete(actionsFor);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function OTLongPressButton({
+  item,
+  onTap,
+  onLongPress,
+  children,
+}: {
+  item: SolicitudRemota;
+  onTap: () => void;
+  onLongPress: () => void;
+  children: React.ReactNode;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firedRef = useRef(false);
+
+  const start = (event: React.PointerEvent) => {
+    event.stopPropagation();
+    firedRef.current = false;
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      onLongPress();
+    }, LONG_PRESS_MS);
+  };
+
+  const finish = (event: React.PointerEvent) => {
+    event.stopPropagation();
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (!firedRef.current) {
+      onTap();
+    }
+  };
+
+  const cancel = (event: React.PointerEvent) => {
+    event.stopPropagation();
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="cot-card__btn"
+      onPointerDown={start}
+      onPointerUp={finish}
+      onPointerLeave={(e) => {
+        e.stopPropagation();
+        cancel(e);
+      }}
+      onPointerCancel={cancel}
+      aria-label={`Opciones de la OT de ${String(item.clientName ?? "sin nombre")}`}
+    >
+      {children}
+    </button>
   );
 }

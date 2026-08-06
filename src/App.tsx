@@ -10,7 +10,6 @@ import { OTScreen } from "./screens/OTScreen";
 import { HistorialScreen } from "./screens/HistorialScreen";
 import { ClientesScreen } from "./screens/ClientesScreen";
 import { ProductosScreen } from "./screens/ProductosScreen";
-import { ReportesScreen } from "./screens/ReportesScreen";
 import { SoporteScreen } from "./screens/SoporteScreen";
 import { ConexionesScreen } from "./screens/ConexionesScreen";
 import { ActualizacionesScreen } from "./screens/ActualizacionesScreen";
@@ -31,8 +30,6 @@ function renderScreen(view: ViewId, setView: (view: ViewId) => void): React.JSX.
       return <ClientesScreen />;
     case "productos":
       return <ProductosScreen />;
-    case "reportes":
-      return <ReportesScreen />;
     case "soporte":
       return <SoporteScreen />;
     case "conexiones":

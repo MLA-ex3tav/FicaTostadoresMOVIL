@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, RefreshCw, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { RefreshCw, ChevronRight, Clock, Package } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   aprobarCotizacion,
@@ -16,7 +16,6 @@ import { obtenerCotizacionPdf } from "../services/cotizacion-pdf";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
 import { setNavBadge } from "../lib/badges";
-import { StatsGrid, StatCard } from "../components/StatCard";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -24,14 +23,12 @@ import { EditarCotizacion } from "../components/EditarCotizacion";
 import { CotizacionActionsSheet } from "../components/CotizacionActionsSheet";
 import { ProductColorSwatches } from "../components/ProductColorSwatches";
 import {
+  coloresProductos,
   estadoLabel,
   estadoPillVariant,
-  formatFecha,
+  formatFechaHora,
   getEstado,
-  isThisWeek,
-  isToday,
   resumirProductos,
-  coloresProductos,
 } from "./shared";
 
 interface ItemState {
@@ -39,7 +36,9 @@ interface ItemState {
   acting: string | null;
 }
 
-export function CotizacionesScreen({ onCreate }: { onCreate: () => void }) {
+const LONG_PRESS_MS = 500;
+
+export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => void }) {
   const [state, setState] = useState<SolicitudesState | null>(null);
   const [itemState, setItemState] = useState<Record<string, ItemState>>({});
   const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
@@ -47,17 +46,15 @@ export function CotizacionesScreen({ onCreate }: { onCreate: () => void }) {
   const [editing, setEditing] = useState<SolicitudRemota | null>(null);
   const [actionsFor, setActionsFor] = useState<SolicitudRemota | null>(null);
 
+  const editingRef = useRef(false);
+  const editingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     return subscribeSolicitudes(setState);
   }, []);
 
   const items = state?.cotizaciones ?? [];
   const pendientes = items.filter(isSolicitudPendiente);
-  const hoy = items.filter((item) => isToday(getSolicitudDate(item)));
-  const semana = items.filter((item) => isThisWeek(getSolicitudDate(item)));
-  const aprobadas = items.filter((item) =>
-    ["aprobada_ot", "completada"].includes(getEstado(item, "")),
-  );
 
   useEffect(() => {
     setNavBadge("cotizaciones", pendientes.length);
@@ -191,13 +188,6 @@ export function CotizacionesScreen({ onCreate }: { onCreate: () => void }) {
         </div>
       </div>
 
-      <StatsGrid>
-        <StatCard label="Pendientes" value={String(pendientes.length)} tone="accent" />
-        <StatCard label="Hoy" value={String(hoy.length)} tone="info" />
-        <StatCard label="Esta semana" value={String(semana.length)} />
-        <StatCard label="Aprobadas" value={String(aprobadas.length)} tone="success" />
-      </StatsGrid>
-
       <div className="panel">
         {items.length === 0 ? (
           <EmptyState
@@ -215,38 +205,85 @@ export function CotizacionesScreen({ onCreate }: { onCreate: () => void }) {
                   ? "Consultando la web."
                   : "Cuando llegue una solicitud desde la web aparecerá aquí automáticamente."
             }
-          >
-            {!state.loading && !state.error ? (
-              <button type="button" className="btn btn--primary" onClick={onCreate}>
-                <Plus size={16} /> Crear cotización
-              </button>
-            ) : null}
-          </EmptyState>
+          />
         ) : (
           <ul className="card-list">
             {items.map((item) => {
               const estado = getEstado(item, "pendiente");
+              const colores = coloresProductos(item);
 
               return (
-                <li key={item.id} className="card-list__item card-list__item--tap">
+                <li key={item.id} className={`card-list__item cot-card cot-card--${estado}`}>
                   <button
                     type="button"
-                    className="card-list__btn"
-                    onClick={() => setActionsFor(item)}
+                    className="cot-card__btn"
+                    onClick={() => {
+                      if (editingRef.current) return;
+                      setActionsFor(item);
+                    }}
+                    onPointerDown={() => {
+                      editingTimerRef.current = setTimeout(() => {
+                        editingRef.current = true;
+                        setEditing(item);
+                      }, LONG_PRESS_MS);
+                    }}
+                    onPointerUp={() => {
+                      if (editingTimerRef.current) {
+                        clearTimeout(editingTimerRef.current);
+                        editingTimerRef.current = null;
+                      }
+                      setTimeout(() => {
+                        editingRef.current = false;
+                      }, 0);
+                    }}
+                    onPointerLeave={() => {
+                      if (editingTimerRef.current) {
+                        clearTimeout(editingTimerRef.current);
+                        editingTimerRef.current = null;
+                      }
+                    }}
+                    onPointerCancel={() => {
+                      if (editingTimerRef.current) {
+                        clearTimeout(editingTimerRef.current);
+                        editingTimerRef.current = null;
+                      }
+                    }}
                     aria-label={`Opciones de cotización de ${String(item.clientName ?? "sin nombre")}`}
                   >
-                    <div className="card-list__top">
-                      <div className="card-list__title">{String(item.clientName ?? "Sin nombre")}</div>
+                    <div className="cot-card__top">
+                      <div className="cot-card__client">
+                        <span className="cot-card__name">
+                          {String(item.clientName ?? "Sin nombre")}
+                        </span>
+                        <span className="cot-card__contact">
+                          {String(item.clientPhone ?? item.clientEmail ?? "—")}
+                        </span>
+                      </div>
                       <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
                     </div>
-                    <div className="card-list__meta">
-                      {String(item.clientPhone ?? item.clientEmail ?? "—")}
+
+                    <div className="cot-card__divider" aria-hidden="true" />
+
+                    <div className="cot-card__row cot-card__row--products">
+                      <span className="cot-card__row-icon" aria-hidden="true">
+                        <Package size={15} strokeWidth={1.75} />
+                      </span>
+                      <span className="cot-card__products-text">{resumirProductos(item)}</span>
+                      {colores.length > 0 ? (
+                        <div className="cot-card__swatches">
+                          <ProductColorSwatches colors={colores} limit={3} />
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="card-list__meta">{resumirProductos(item)}</div>
-                    <ProductColorSwatches colors={coloresProductos(item)} />
-                    <div className="card-list__meta card-list__meta--row">
-                      <span>{formatFecha(getSolicitudDate(item))}</span>
-                      <span className="card-list__chevron" aria-hidden="true">
+
+                    <div className="cot-card__date">
+                      <div className="cot-card__row">
+                        <span className="cot-card__row-icon" aria-hidden="true">
+                          <Clock size={14} strokeWidth={1.75} />
+                        </span>
+                        <span>{formatFechaHora(getSolicitudDate(item))}</span>
+                      </div>
+                      <span className="cot-card__chevron" aria-hidden="true">
                         <ChevronRight size={16} />
                       </span>
                     </div>

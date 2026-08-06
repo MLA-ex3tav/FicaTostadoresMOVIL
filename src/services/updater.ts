@@ -5,7 +5,6 @@ import {
 } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 import { APP_VERSION, GITHUB_REPO, APK_ASSET_SUFFIX } from "../lib/app-config";
-import { showToast } from "../ui/toast";
 
 interface ApkInstallerPlugin {
   install(options: { filePath: string }): Promise<{ ok: boolean }>;
@@ -224,27 +223,29 @@ export async function downloadAndInstallApk(
   }
 }
 
+let autoUpdateInFlight = false;
+
 /**
- * Comprobación automática al iniciar: muestra un toast si hay actualización.
- * No muestra errores silenciosos.
+ * Comprobación y descarga automática al iniciar la app:
+ * Si hay una actualización disponible, la descarga sí o sí en segundo plano
+ * y lanza inmediatamente el aviso nativo del celular para actualizar o abrir la app.
  */
 export async function checkAppUpdates(): Promise<void> {
-  const result = await checkForUpdates();
-  if (!result.updateAvailable) return;
+  if (autoUpdateInFlight) return;
 
-  showToast({
-    title: `⚡ Actualización ${result.latestVersion} disponible`,
-    message: `Hay una nueva versión de la app. Descárgala desde Actualizaciones.`,
-    tone: "warning",
-    durationMs: 12000,
-    actions: [
-      {
-        label: "Ir a Actualizaciones",
-        onClick: () => {
-          const event = new CustomEvent("app:navigate", { detail: "actualizaciones" });
-          window.dispatchEvent(event);
-        },
-      },
-    ],
-  });
+  try {
+    const result = await checkForUpdates();
+    if (!result.updateAvailable || !result.apkUrl) return;
+
+    autoUpdateInFlight = true;
+
+    const releaseAsset = result.release?.assets.find((a) => a.name.endsWith(APK_ASSET_SUFFIX));
+    const fileName = releaseAsset?.name ?? "fica-tostadores.apk";
+
+    await downloadAndInstallApk(result.apkUrl, fileName);
+  } catch (err) {
+    console.error("[updater] Error en actualización automática:", err);
+  } finally {
+    autoUpdateInFlight = false;
+  }
 }

@@ -301,6 +301,38 @@ let pollTimer: number | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let hasLoadedOnce = false;
 
+/** Normaliza campos provenientes de distintas colecciones o variantes de Firebase (soporte / servicio técnico). */
+export function normalizarSolicitud(item: SolicitudRemota): SolicitudRemota {
+  if (!item || typeof item !== "object") return item;
+
+  const getStr = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = item[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+
+  const clientName = getStr("clientName", "nombre", "nombreCliente", "cliente", "name") ?? "Sin nombre";
+  const clientPhone = getStr("clientPhone", "telefono", "phone", "telefonoCliente");
+  const clientEmail = getStr("clientEmail", "email", "correo");
+  const equipmentModel = getStr("equipmentModel", "modelo", "equipo", "modeloEquipo", "maquina");
+  const issueCategory = getStr("issueCategory", "categoria", "tipoFalla", "asunto", "tipo", "motivo");
+  const message = getStr("message", "mensaje", "descripcion", "detalle", "comentario");
+  const createdAt = getStr("createdAt", "fecha", "timestamp", "created_at");
+
+  return {
+    ...item,
+    clientName: item.clientName ?? clientName,
+    clientPhone: item.clientPhone ?? clientPhone,
+    clientEmail: item.clientEmail ?? clientEmail,
+    equipmentModel: item.equipmentModel ?? equipmentModel,
+    issueCategory: item.issueCategory ?? issueCategory,
+    message: item.message ?? message,
+    createdAt: item.createdAt ?? createdAt,
+  };
+}
+
 export async function refreshSolicitudes(): Promise<void> {
   if (refreshInFlight) {
     return refreshInFlight;
@@ -320,12 +352,12 @@ export async function refreshSolicitudes(): Promise<void> {
     ]);
 
     if (cotizaciones.ok && cotizaciones.data) {
-      serverCotizaciones = cotizaciones.data.solicitudes;
+      serverCotizaciones = cotizaciones.data.solicitudes.map(normalizarSolicitud);
       rebuildCotizaciones();
     }
 
     if (soporte.ok && soporte.data) {
-      state.soporte = soporte.data.solicitudes;
+      state.soporte = soporte.data.solicitudes.map(normalizarSolicitud);
     }
 
     if (cotizaciones.ok && soporte.ok) {
@@ -342,7 +374,7 @@ export async function refreshSolicitudes(): Promise<void> {
     emit();
 
     // Notifica por el SO cuando llegan cotizaciones/soporte nuevos.
-    if (cotizaciones.ok && soporte.ok) {
+    if (cotizaciones.ok) {
       void notifyNewSolicitudes(state.cotizaciones, state.soporte);
     }
 

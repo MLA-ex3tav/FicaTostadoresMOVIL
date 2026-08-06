@@ -7,7 +7,7 @@ import {
   estadoLabel,
   estadoPillVariant,
   getEstado,
-  formatFecha,
+  formatFechaHora,
   resumirProductos,
   coloresProductos,
 } from "../screens/shared";
@@ -50,7 +50,7 @@ export function CotizacionActionsSheet({
               {String(item.clientName ?? "Sin nombre")}
             </span>
             <span className="cotizacion-sheet__meta">
-              {formatFecha(getSolicitudDate(item))} · {resumirProductos(item)}
+              {formatFechaHora(getSolicitudDate(item))} · {resumirProductos(item)}
             </span>
             <ProductColorSwatches colors={coloresProductos(item)} />
           </div>

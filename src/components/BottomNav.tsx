@@ -9,7 +9,6 @@ import {
   X,
   Users,
   Box,
-  ChartBar,
   Headphones,
   Plug,
   Building2,
@@ -28,11 +27,10 @@ const RIGHT_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> =
 ];
 
 const MORE_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> = [
+  { id: "soporte", label: "Soporte técnico", icon: Headphones },
   { id: "clientes", label: "Clientes", icon: Users },
   { id: "productos", label: "Productos", icon: Box },
-  { id: "reportes", label: "Reportes", icon: ChartBar },
   { id: "empresa", label: "Datos de la empresa", icon: Building2 },
-  { id: "soporte", label: "Soporte técnico", icon: Headphones },
   { id: "conexiones", label: "Conexiones", icon: Plug },
   { id: "actualizaciones", label: "Actualizaciones", icon: RefreshCw },
 ];
