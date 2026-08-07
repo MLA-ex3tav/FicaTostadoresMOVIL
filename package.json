@@ -1,7 +1,7 @@
 {
   "name": "fica-tostadores-movil",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Aplicación móvil para administración de Fica Tostadores (React + Vite PWA / Capacitor)",
   "type": "module",
   "scripts": {

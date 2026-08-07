@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronRight, Minus, Package, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Minus, Package, Plus, Save, Search, Trash2, X } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   findProducto,
@@ -11,8 +11,15 @@ import {
 } from "../services/catalog";
 import { generarCotizacionPdf, invalidarCotizacionPdf } from "../services/cotizacion-pdf";
 import { guardarEdicionLocal } from "../services/solicitudes";
+import { EmptyState } from "./EmptyState";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
+import {
+  DEFAULT_PRODUCT_COLOR_ID,
+  getProductColorById,
+  getProductColorLabel,
+  PRODUCT_COLORS,
+} from "../lib/product-colors";
 
 interface EditarCotizacionProps {
   item: SolicitudRemota;
@@ -24,6 +31,8 @@ interface ProductoEditable {
   name: string;
   quantity: number;
   unitPrice: number;
+  selectedColorId?: string;
+  selectedColor?: string;
 }
 
 function formatPrecio(valor: number): string {
@@ -62,6 +71,11 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
         name: String(record.name ?? ""),
         quantity: parseQuantity(record.quantity ?? record.cantidad),
         unitPrice: parsePrice(record.price ?? record.precio ?? record.unitPrice),
+        selectedColorId: String(record.selectedColorId ?? DEFAULT_PRODUCT_COLOR_ID),
+        selectedColor:
+          String(record.selectedColor ?? "") ||
+          (getProductColorLabel(String(record.selectedColorId ?? DEFAULT_PRODUCT_COLOR_ID)) ??
+            undefined),
       };
     }),
   );
@@ -70,6 +84,7 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
   const [busqueda, setBusqueda] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [showProductos, setShowProductos] = useState(false);
+  const [collapsing, setCollapsing] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeCatalogo(setCatalogo);
@@ -87,54 +102,90 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
     [productos, catalogo],
   );
 
-  const agregables = useMemo(() => {
-    const list = (catalogo ?? []).filter(
-      (product) => !productos.some((selected) => selected.productId === product.id),
-    );
+  const filtered = useMemo(() => {
+    const list = catalogo ?? [];
     const term = busqueda.trim().toLowerCase();
-    if (!term) return list;
     return list.filter((product) =>
+      !term ||
       `${product.name ?? ""} ${product.modelo ?? ""} ${product.categoria ?? product.category ?? ""}`
         .toLowerCase()
         .includes(term),
     );
-  }, [catalogo, productos, busqueda]);
+  }, [catalogo, busqueda, productos]);
 
-  const agregarDelCatalogo = (product: ProductoCatalogo) => {
-    setProductos((prev) => [
-      ...prev,
-      {
-        productId: product.id,
-        name: String(product.name ?? product.modelo ?? ""),
-        quantity: 1,
-        unitPrice: getPrecioLocal(product),
-      },
-    ]);
-    setBusqueda("");
+  const seleccion = useMemo(() => {
+    const map: Record<string, ProductoEditable> = {};
+    for (const producto of productos) map[producto.productId] = producto;
+    return map;
+  }, [productos]);
+
+  const totalProductos = productos.reduce((sum, producto) => sum + producto.quantity, 0);
+
+  const agregar = (product: ProductoCatalogo) => {
+    setProductos((prev) => {
+      const existing = prev.find((selected) => selected.productId === product.id);
+      if (existing) {
+        return prev.map((selected) =>
+          selected.productId === product.id
+            ? { ...selected, quantity: selected.quantity + 1 }
+            : selected,
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          name: String(product.name ?? product.modelo ?? ""),
+          quantity: 1,
+          unitPrice: getPrecioLocal(product),
+          selectedColorId: DEFAULT_PRODUCT_COLOR_ID,
+          selectedColor: getProductColorLabel(DEFAULT_PRODUCT_COLOR_ID) ?? undefined,
+        },
+      ];
+    });
   };
 
-  const incrementar = (productId: string) => {
+  const cambiarColor = (productId: string, colorId: string) => {
     setProductos((prev) =>
       prev.map((producto) =>
         producto.productId === productId
-          ? { ...producto, quantity: producto.quantity + 1 }
+          ? {
+              ...producto,
+              selectedColorId: colorId,
+              selectedColor: getProductColorById(colorId)?.name ?? producto.selectedColor,
+            }
           : producto,
       ),
     );
   };
 
-  const decrementar = (productId: string) => {
+  const quitar = (productId: string) => {
+    const existing = seleccion[productId];
+    if (!existing) return;
+    if (existing.quantity <= 1) {
+      colapsarYQuitar(productId);
+      return;
+    }
     setProductos((prev) =>
-      prev.flatMap((producto) => {
-        if (producto.productId !== productId) return [producto];
-        if (producto.quantity <= 1) return [];
-        return [{ ...producto, quantity: producto.quantity - 1 }];
-      }),
+      prev.map((producto) =>
+        producto.productId === productId
+          ? { ...producto, quantity: producto.quantity - 1 }
+          : producto,
+      ),
     );
   };
 
-  const eliminarProducto = (productId: string) => {
-    setProductos((prev) => prev.filter((producto) => producto.productId !== productId));
+  const colapsarYQuitar = (productId: string) => {
+    if (collapsing) return;
+    setCollapsing(productId);
+    window.setTimeout(() => {
+      setProductos((prev) => prev.filter((producto) => producto.productId !== productId));
+      setCollapsing(null);
+    }, 300);
+  };
+
+  const eliminar = (productId: string) => {
+    colapsarYQuitar(productId);
   };
 
   const guardar = async () => {
@@ -151,6 +202,8 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
         name: producto.name,
         quantity: producto.quantity,
         unitPrice: precioEfectivo(producto),
+        selectedColorId: producto.selectedColorId ?? DEFAULT_PRODUCT_COLOR_ID,
+        selectedColor: producto.selectedColor,
       })),
     };
 
@@ -291,6 +344,12 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                         <span className="editor-product-row__name">
                           {producto.name || String(producto.productId || "Producto")}
                         </span>
+                        {producto.selectedColorId ? (
+                          <span className="editor-product-row__color">
+                            {getProductColorLabel(producto.selectedColorId) ??
+                              producto.selectedColor}
+                          </span>
+                        ) : null}
                         <span className="editor-product-row__qty">× {producto.quantity}</span>
                         <span className="editor-product-row__total">
                           {formatPrecio(precioEfectivo(producto) * producto.quantity)}
@@ -327,7 +386,7 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                 {guardando ? (
                   <span className="btn__spinner" aria-hidden="true" />
                 ) : (
-                  <Check size={18} strokeWidth={2.5} />
+                  <Save size={18} strokeWidth={2.5} />
                 )}
                 {guardando ? "Guardando…" : ""}
               </button>
@@ -357,113 +416,175 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
               </header>
 
               <div className="editor__body">
-                {productos.length === 0 ? (
-                  <p className="editor__empty">Sin productos seleccionados.</p>
-                ) : (
-                  <ul className="card-list">
-                    {productos.map((producto) => (
-                      <li key={producto.productId || producto.name} className="card-list__item">
-                        <div className="card-list__top">
-                          <div className="card-list__title">
-                            {producto.name || String(producto.productId || "Producto")}
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn--danger btn--sm"
-                            onClick={() => eliminarProducto(producto.productId)}
-                            aria-label={`Quitar ${producto.name}`}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                        <div className="card-list__meta">{formatPrecio(precioEfectivo(producto))}</div>
-                        <div className="qty-stepper">
-                          <button
-                            type="button"
-                            className="btn btn--secondary btn--sm"
-                            onClick={() => decrementar(producto.productId)}
-                            aria-label="Disminuir cantidad"
-                          >
-                            <Minus size={14} />
-                          </button>
-                          <span className="qty-stepper__value">{producto.quantity}</span>
-                          <button
-                            type="button"
-                            className="btn btn--secondary btn--sm"
-                            onClick={() => incrementar(producto.productId)}
-                            aria-label="Aumentar cantidad"
-                          >
-                            <Plus size={14} />
-                          </button>
-                          <span className="qty-stepper__total">
-                            {formatPrecio(precioEfectivo(producto) * producto.quantity)}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <section className="form-section">
+                  <div className="form-section__row">
+                    <h3 className="form-section__title">Productos</h3>
+                    <span className="editor__count">
+                      {totalProductos} producto{totalProductos === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="search-field">
+                    <span className="search-field__icon" aria-hidden="true">
+                      <Search size={22} />
+                    </span>
+                    <input
+                      className="search-input"
+                      type="search"
+                      placeholder="Buscar productos…"
+                      value={busqueda}
+                      onChange={(event) => setBusqueda(event.target.value)}
+                    />
+                    {busqueda ? (
+                      <button
+                        type="button"
+                        className="search-field__clear"
+                        onClick={() => setBusqueda("")}
+                        aria-label="Limpiar búsqueda"
+                      >
+                        <X size={16} />
+                      </button>
+                    ) : null}
+                  </div>
 
-                <h3 className="form-section__title editor__add-title">Agregar productos</h3>
-                <div className="search-field">
-                  <span className="search-field__icon" aria-hidden="true">
-                    <Search size={22} />
-                  </span>
-                  <input
-                    className="search-input"
-                    type="search"
-                    placeholder="Buscar productos…"
-                    value={busqueda}
-                    onChange={(event) => setBusqueda(event.target.value)}
-                  />
-                  {busqueda ? (
-                    <button
-                      type="button"
-                      className="search-field__clear"
-                      onClick={() => setBusqueda("")}
-                      aria-label="Limpiar búsqueda"
-                    >
-                      <X size={16} />
-                    </button>
-                  ) : null}
-                </div>
+                  {catalogo === null ? (
+                    <EmptyState title="Cargando catálogo…" text="Consultando Firestore." />
+                  ) : catalogo.length === 0 ? (
+                    <EmptyState
+                      title="Catálogo vacío"
+                      text="No se encontraron productos en Firestore para cotizar."
+                    />
+                  ) : filtered.length === 0 ? (
+                    <EmptyState
+                      title="Sin resultados"
+                      text={`No se encontraron productos para "${busqueda}".`}
+                    />
+                  ) : (
+                    <ul className="card-list">
+                      {filtered.map((product) => {
+                        const isSelected = Boolean(seleccion[product.id]);
+                        const isCollapsing = collapsing === product.id;
+                        return (
+                          <li
+                            key={product.id}
+                            className={`card-list__item${isSelected ? " card-list__item--selected" : " card-list__item--tap"}${isCollapsing ? " card-list__item--closing" : ""}`}
+                          >
+                            {isSelected ? (
+                              <button
+                                type="button"
+                                className="card-list__btn card-list__btn--static"
+                                onClick={() => eliminar(product.id)}
+                                disabled={isCollapsing}
+                                aria-label={`Deseleccionar ${product.name ?? "producto"}`}
+                              >
+                                <div className="card-list__top">
+                                  <div className="card-list__title">
+                                    {String(product.name ?? product.modelo ?? "Sin nombre")}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn--danger btn--sm"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      eliminar(product.id);
+                                    }}
+                                    aria-label={`Quitar ${product.name ?? "producto"}`}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                                <div className="card-list__meta">
+                                  {product.modelo ? String(product.modelo) : "—"} ·{" "}
+                                  {String(product.categoria ?? product.category ?? "—")}
+                                </div>
+                                <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="card-list__btn"
+                                onClick={() => agregar(product)}
+                              >
+                                <div className="card-list__top">
+                                  <div className="card-list__title">
+                                    {String(product.name ?? product.modelo ?? "Sin nombre")}
+                                  </div>
+                                  <span className="card-list__add" role="button" aria-label="Agregar">
+                                    <Plus size={14} />
+                                  </span>
+                                </div>
+                                <div className="card-list__meta">
+                                  {product.modelo ? String(product.modelo) : "—"} ·{" "}
+                                  {String(product.categoria ?? product.category ?? "—")}
+                                </div>
+                                <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
+                              </button>
+                            )}
 
-                {agregables.length === 0 ? (
-                  <p className="editor__empty">
-                    {busqueda.trim() ? "Sin resultados para esa búsqueda." : "No hay más productos para agregar."}
-                  </p>
-                ) : (
-                  <ul className="card-list">
-                    {agregables.map((product) => (
-                      <li key={product.id} className="card-list__item card-list__item--tap">
-                        <button
-                          type="button"
-                          className="card-list__btn"
-                          onClick={() => agregarDelCatalogo(product)}
-                        >
-                          <div className="card-list__top">
-                            <div className="card-list__title">
-                              {String(product.name ?? product.modelo ?? "Sin nombre")}
-                            </div>
-                            <span className="btn btn--primary btn--sm">
-                              <Plus size={14} /> Agregar
-                            </span>
-                          </div>
-                          <div className="card-list__meta">
-                            {String(product.modelo ?? "—")} ·{" "}
-                            {String(product.categoria ?? product.category ?? "—")}
-                          </div>
-                          <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                            {seleccion[product.id] ? (
+                              <div className="card-list__expand">
+                                <div className="qty-stepper">
+                                  <button
+                                    type="button"
+                                    className="btn btn--secondary btn--sm"
+                                    onClick={() => quitar(product.id)}
+                                    aria-label="Disminuir cantidad"
+                                  >
+                                    <Minus size={14} />
+                                  </button>
+                                  <span className="qty-stepper__value">{seleccion[product.id].quantity}</span>
+                                  <button
+                                    type="button"
+                                    className="btn btn--secondary btn--sm"
+                                    onClick={() => agregar(product)}
+                                    aria-label="Aumentar cantidad"
+                                  >
+                                    <Plus size={14} />
+                                  </button>
+                                  <span className="qty-stepper__total">
+                                    {formatPrecio(getPrecioLocal(product) * seleccion[product.id].quantity)}
+                                  </span>
+                                </div>
+                                <div className="color-picker">
+                                  <span
+                                    className="color-picker__current"
+                                    style={{ backgroundColor: getProductColorById(seleccion[product.id].selectedColorId)?.hex }}
+                                    aria-hidden="true"
+                                  />
+                                  <div className="color-picker__dots" role="radiogroup" aria-label={`Color de ${product.name ?? "producto"}`}>
+                                    {PRODUCT_COLORS.map((color) => {
+                                      const isSelected =
+                                        (seleccion[product.id].selectedColorId ?? DEFAULT_PRODUCT_COLOR_ID) === color.id;
+                                      return (
+                                        <button
+                                          key={color.id}
+                                          type="button"
+                                          role="radio"
+                                          aria-checked={isSelected}
+                                          aria-label={`Color ${color.name}`}
+                                          className={`color-picker__dot${isSelected ? " color-picker__dot--active" : ""}`}
+                                          style={{ backgroundColor: color.hex }}
+                                          onClick={() => cambiarColor(product.id, color.id)}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                  <span className="color-picker__label">
+                                    {getProductColorLabel(seleccion[product.id].selectedColorId) ?? seleccion[product.id].selectedColor ?? "Color"}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
               </div>
 
               <footer className="editor__footer">
                 <div className="editor__total">
-                  <span className="editor__total-label">Total ({productos.length} {productos.length === 1 ? "producto" : "productos"})</span>
+                  <span className="editor__total-label">Total ({totalProductos} {totalProductos === 1 ? "producto" : "productos"})</span>
                   <strong className="editor__total-value">{formatPrecio(total)}</strong>
                 </div>
                 <button

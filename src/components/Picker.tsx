@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 
 export interface PickerOption {
@@ -75,67 +76,70 @@ export function Picker({
         </span>
       </button>
 
-      {open ? (
-        <div className="picker-sheet" role="dialog" aria-modal="true" aria-label={label}>
-          <div className="picker-sheet__backdrop" onClick={() => setOpen(false)} />
-          <div className="picker-sheet__panel">
-            <header className="picker-sheet__header">
-              <span className="picker-sheet__title">{label}</span>
-              <button
-                type="button"
-                className="picker-sheet__close"
-                aria-label="Cerrar"
-                onClick={() => setOpen(false)}
-              >
-                <X size={20} />
-              </button>
-            </header>
+      {open
+        ? createPortal(
+            <div className="picker-sheet" role="dialog" aria-modal="true" aria-label={label}>
+              <div className="picker-sheet__backdrop" onClick={() => setOpen(false)} />
+              <div className="picker-sheet__panel">
+                <header className="picker-sheet__header">
+                  <span className="picker-sheet__title">{label}</span>
+                  <button
+                    type="button"
+                    className="picker-sheet__close"
+                    aria-label="Cerrar"
+                    onClick={() => setOpen(false)}
+                  >
+                    <X size={20} />
+                  </button>
+                </header>
 
-            {searchable ? (
-              <div className="picker-sheet__search">
-                <span className="picker-sheet__search-icon" aria-hidden="true">
-                  <Search size={16} />
-                </span>
-                <input
-                  className="picker-sheet__search-input"
-                  type="search"
-                  placeholder="Buscar…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  autoFocus
-                />
+                {searchable ? (
+                  <div className="picker-sheet__search">
+                    <span className="picker-sheet__search-icon" aria-hidden="true">
+                      <Search size={16} />
+                    </span>
+                    <input
+                      className="picker-sheet__search-input"
+                      type="search"
+                      placeholder="Buscar…"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                ) : null}
+
+                <div className="picker-sheet__list" role="listbox">
+                  {filtered.length === 0 ? (
+                    <div className="picker-sheet__empty">Sin resultados</div>
+                  ) : (
+                    filtered.map((option) => {
+                      const isSelected = option.value === value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          className={`picker-sheet__option${isSelected ? " picker-sheet__option--selected" : ""}`}
+                          onClick={() => choose(option)}
+                        >
+                          <span className="picker-sheet__option-label">{option.label}</span>
+                          {isSelected ? (
+                            <span className="picker-sheet__option-check" aria-hidden="true">
+                              <Check size={18} />
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            ) : null}
-
-            <div className="picker-sheet__list" role="listbox">
-              {filtered.length === 0 ? (
-                <div className="picker-sheet__empty">Sin resultados</div>
-              ) : (
-                filtered.map((option) => {
-                  const isSelected = option.value === value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      className={`picker-sheet__option${isSelected ? " picker-sheet__option--selected" : ""}`}
-                      onClick={() => choose(option)}
-                    >
-                      <span className="picker-sheet__option-label">{option.label}</span>
-                      {isSelected ? (
-                        <span className="picker-sheet__option-check" aria-hidden="true">
-                          <Check size={18} />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

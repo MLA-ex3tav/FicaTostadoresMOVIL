@@ -15,6 +15,7 @@ import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { HistorialActionsSheet } from "../components/HistorialActionsSheet";
+import { Picker } from "../components/Picker";
 import {
   estadoLabel,
   estadoPillVariant,
@@ -193,44 +194,19 @@ export function HistorialScreen() {
         />
       </div>
 
-      {/* Selector de categorías */}
-      <div className="category-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={category === "todos"}
-          className={`category-tab ${category === "todos" ? "category-tab--active" : ""}`}
-          onClick={() => setCategory("todos")}
-        >
-          Todos <span className="category-tab__badge">{allItems.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={category === "cotizaciones"}
-          className={`category-tab ${category === "cotizaciones" ? "category-tab--active" : ""}`}
-          onClick={() => setCategory("cotizaciones")}
-        >
-          Cotizaciones <span className="category-tab__badge">{totalCotizaciones}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={category === "ot"}
-          className={`category-tab ${category === "ot" ? "category-tab--active" : ""}`}
-          onClick={() => setCategory("ot")}
-        >
-          OT <span className="category-tab__badge">{totalOt}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={category === "soporte"}
-          className={`category-tab ${category === "soporte" ? "category-tab--active" : ""}`}
-          onClick={() => setCategory("soporte")}
-        >
-          Soporte <span className="category-tab__badge">{totalSoporte}</span>
-        </button>
+      <div style={{ marginBottom: "14px" }}>
+        <Picker
+        label="Categoría"
+        value={category}
+        onChange={(value) => setCategory(value as CategoryFilter)}
+        searchable={false}
+        options={[
+          { value: "todos", label: `Todos (${allItems.length})` },
+          { value: "cotizaciones", label: `Cotizaciones (${totalCotizaciones})` },
+          { value: "ot", label: `OT (${totalOt})` },
+          { value: "soporte", label: `Soporte (${totalSoporte})` },
+        ]}
+      />
       </div>
 
       <div className="panel">

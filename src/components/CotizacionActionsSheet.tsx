@@ -1,4 +1,4 @@
-import { Check, FileText, Pencil, Trash2, X } from "lucide-react";
+import { Check, Eye, FileText, Pencil, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { SolicitudRemota } from "../lib/web-api";
 import { getSolicitudDate } from "../services/solicitudes";
@@ -19,6 +19,7 @@ interface CotizacionActionsSheetProps {
   busy: boolean;
   acting: string | null;
   onClose: () => void;
+  onVerDetalles: () => void;
   onVerPdf: () => void;
   onEditar: () => void;
   onAprobar: () => void;
@@ -32,6 +33,7 @@ export function CotizacionActionsSheet({
   busy,
   acting,
   onClose,
+  onVerDetalles,
   onVerPdf,
   onEditar,
   onAprobar,
@@ -68,6 +70,12 @@ export function CotizacionActionsSheet({
         </header>
         <div className="more-sheet__list">
           <div className="cotizacion-sheet__divider" aria-hidden="true" />
+          <button type="button" className="more-sheet__item" onClick={onVerDetalles}>
+            <span className="more-sheet__item-icon" aria-hidden="true">
+              <Eye size={20} />
+            </span>
+            <span className="more-sheet__item-label">Detalles</span>
+          </button>
           <button type="button" className="more-sheet__item" onClick={onVerPdf} disabled={busy}>
             <span className="more-sheet__item-icon" aria-hidden="true">
               {busy ? <span className="btn__spinner" aria-hidden="true" /> : <FileText size={20} />}

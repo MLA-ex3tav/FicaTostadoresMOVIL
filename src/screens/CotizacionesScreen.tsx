@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, ChevronRight, Clock, Package } from "lucide-react";
+import { ChevronRight, Clock, Package } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   aprobarCotizacion,
@@ -21,6 +21,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EditarCotizacion } from "../components/EditarCotizacion";
 import { CotizacionActionsSheet } from "../components/CotizacionActionsSheet";
+import { DetalleSolicitudSheet } from "../components/DetalleSolicitudSheet";
 import { ProductColorSwatches } from "../components/ProductColorSwatches";
 import {
   coloresProductos,
@@ -45,6 +46,7 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState<SolicitudRemota | null>(null);
   const [actionsFor, setActionsFor] = useState<SolicitudRemota | null>(null);
+  const [detalleFor, setDetalleFor] = useState<SolicitudRemota | null>(null);
 
   const editingRef = useRef(false);
   const editingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -211,6 +213,7 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
             {items.map((item) => {
               const estado = getEstado(item, "pendiente");
               const colores = coloresProductos(item);
+              const esLocal = esCotizacionSoloLocal(item.id);
 
               return (
                 <li key={item.id} className={`card-list__item cot-card cot-card--${estado}`}>
@@ -259,7 +262,14 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
                           {String(item.clientPhone ?? item.clientEmail ?? "—")}
                         </span>
                       </div>
-                      <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
+                      <div className="cot-card__status">
+                        {esLocal ? (
+                          <span className="cot-card__local-badge">
+                            <Package size={11} strokeWidth={2.5} /> Local
+                          </span>
+                        ) : null}
+                        <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
+                      </div>
                     </div>
 
                     <div className="cot-card__divider" aria-hidden="true" />
@@ -293,20 +303,6 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
             })}
           </ul>
         )}
-        {state.pendientesSincronizar > 0 ? (
-          <div className="sync-banner" role="status">
-            <span className="sync-banner__icon" aria-hidden="true">
-              <RefreshCw size={14} />
-            </span>
-            <span>
-              {state.pendientesSincronizar}{" "}
-              {state.pendientesSincronizar === 1
-                ? "cotización guardada localmente"
-                : "cotizaciones guardadas localmente"}
-              , sincronizando con el servidor…
-            </span>
-          </div>
-        ) : null}
         {state.error && items.length > 0 ? (
           <div className="conn-updated">Última actualización con errores: {state.error}</div>
         ) : null}
@@ -323,6 +319,10 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
           busy={itemState[actionsFor.id]?.generating ?? false}
           acting={itemState[actionsFor.id]?.acting ?? null}
           onClose={() => setActionsFor(null)}
+          onVerDetalles={() => {
+            setActionsFor(null);
+            setDetalleFor(actionsFor);
+          }}
           onVerPdf={() => {
             setActionsFor(null);
             void verPdf(actionsFor);
@@ -361,6 +361,10 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
 
       {editing ? (
         <EditarCotizacion item={editing} onClose={() => setEditing(null)} />
+      ) : null}
+
+      {detalleFor ? (
+        <DetalleSolicitudSheet item={detalleFor} onClose={() => setDetalleFor(null)} />
       ) : null}
     </div>
   );

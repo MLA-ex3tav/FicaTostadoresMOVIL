@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock, Package, ChevronRight } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
-import { actualizarEstadoSolicitud } from "../lib/web-api";
 import {
   borrarSolicitud,
+  cambiarEstadoLocal,
   getSolicitudDate,
-  refreshSolicitudes,
   subscribeSolicitudes,
   type SolicitudesState,
 } from "../services/solicitudes";
@@ -15,6 +14,7 @@ import { openPdfActions } from "../ui/pdf-actions";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OTActionsSheet } from "../components/OTActionsSheet";
+import { DetalleSolicitudSheet } from "../components/DetalleSolicitudSheet";
 import {
   OT_ESTADOS,
   formatFechaHora,
@@ -63,6 +63,7 @@ export function OTScreen() {
   const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionsFor, setActionsFor] = useState<SolicitudRemota | null>(null);
+  const [detalleFor, setDetalleFor] = useState<SolicitudRemota | null>(null);
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
@@ -98,25 +99,14 @@ export function OTScreen() {
     }
   };
 
-  const avanzar = async (item: SolicitudRemota, next: string) => {
-    setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], advancing: true } }));
-    const result = await actualizarEstadoSolicitud(item.id, next);
-    if (!result.ok) {
-      setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], advancing: false } }));
-      showToast({
-        title: "Error al actualizar OT",
-        message: result.error ?? "Ocurrió un error al cambiar la etapa de producción.",
-        tone: "error",
-      });
-      return;
-    }
-    await refreshSolicitudes();
+  const avanzar = (item: SolicitudRemota, next: string) => {
+    // Cambio optimista: se aplica al instante y se envía a Firebase en background.
+    cambiarEstadoLocal(item.id, next);
     showToast({
       title: "Etapa de OT Actualizada",
-      message: "La orden de trabajo fue avanzada exitosamente.",
+      message: "El cambio se está sincronizando con el servidor.",
       tone: "success",
     });
-    setItemState((prev) => ({ ...prev, [item.id]: { ...prev[item.id], advancing: false } }));
   };
 
   const eliminar = async (item: SolicitudRemota) => {
@@ -170,11 +160,11 @@ export function OTScreen() {
                 <li key={item.id} className={`card-list__item ot-card ot-card--${estado}`}>
                   <OTLongPressButton
                     item={item}
-                    onTap={() => {
+                    onTap={() => setActionsFor(item)}
+                    onLongPress={() => {
                       const n = siguienteEstado(getEstado(item, "aprobada_ot"));
                       if (n) void avanzar(item, n);
                     }}
-                    onLongPress={() => setActionsFor(item)}
                   >
                     <div className="cot-card__top">
                       <div className="cot-card__client">
@@ -228,11 +218,11 @@ export function OTScreen() {
 
                     {next ? (
                       <div className="ot-card__next-sub">
-                        Toca para cambiar estado · Mantén presionado para opciones
+                        Toca para opciones · Mantén presionado para pasar de fase
                       </div>
                     ) : (
                       <div className="ot-card__next-sub ot-card__next-sub--completed">
-                        ✓ Orden terminada · Mantén presionado para opciones
+                        ✓ Orden terminada · Toca para opciones
                       </div>
                     )}
                   </OTLongPressButton>
@@ -264,6 +254,10 @@ export function OTScreen() {
           busy={itemState[actionsFor.id]?.generating ?? false}
           advancing={itemState[actionsFor.id]?.advancing ?? false}
           onClose={() => setActionsFor(null)}
+          onVerDetalles={() => {
+            setActionsFor(null);
+            setDetalleFor(actionsFor);
+          }}
           onAvanzar={() => {
             const next = siguienteEstado(getEstado(actionsFor, "aprobada_ot"));
             setActionsFor(null);
@@ -278,6 +272,10 @@ export function OTScreen() {
             setConfirmDelete(actionsFor);
           }}
         />
+      ) : null}
+
+      {detalleFor ? (
+        <DetalleSolicitudSheet item={detalleFor} variant="ot" onClose={() => setDetalleFor(null)} />
       ) : null}
     </div>
   );
@@ -306,23 +304,24 @@ function OTLongPressButton({
     }, LONG_PRESS_MS);
   };
 
-  const finish = (event: React.PointerEvent) => {
-    event.stopPropagation();
+  const clearTimer = () => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+  };
+
+  const handleClick = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    clearTimer();
     if (!firedRef.current) {
       onTap();
     }
   };
 
-  const cancel = (event: React.PointerEvent) => {
+  const handleLeave = (event: React.PointerEvent) => {
     event.stopPropagation();
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearTimer();
   };
 
   return (
@@ -330,12 +329,12 @@ function OTLongPressButton({
       type="button"
       className="cot-card__btn"
       onPointerDown={start}
-      onPointerUp={finish}
-      onPointerLeave={(e) => {
-        e.stopPropagation();
-        cancel(e);
+      onClick={handleClick}
+      onPointerLeave={handleLeave}
+      onPointerCancel={(event) => {
+        event.stopPropagation();
+        clearTimer();
       }}
-      onPointerCancel={cancel}
       aria-label={`Opciones de la OT de ${String(item.clientName ?? "sin nombre")}`}
     >
       {children}

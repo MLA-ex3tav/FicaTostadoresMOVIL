@@ -17,6 +17,7 @@ import { EmptyState } from "../components/EmptyState";
 import { WhatsAppIcon } from "../components/WhatsAppIcon";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SoporteActionsSheet } from "../components/SoporteActionsSheet";
+import { Picker } from "../components/Picker";
 import {
   ESTADO_LABELS,
   estadoLabel,
@@ -181,43 +182,19 @@ export function SoporteScreen() {
         />
       </div>
 
-      <div className="category-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "todas"}
-          className={`category-tab ${activeTab === "todas" ? "category-tab--active" : ""}`}
-          onClick={() => setActiveTab("todas")}
-        >
-          Todas <span className="category-tab__badge">{rawItems.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "abiertas"}
-          className={`category-tab ${activeTab === "abiertas" ? "category-tab--active" : ""}`}
-          onClick={() => setActiveTab("abiertas")}
-        >
-          Abiertas <span className="category-tab__badge">{abiertas.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "en_curso"}
-          className={`category-tab ${activeTab === "en_curso" ? "category-tab--active" : ""}`}
-          onClick={() => setActiveTab("en_curso")}
-        >
-          En curso <span className="category-tab__badge">{enCurso.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "resueltas"}
-          className={`category-tab ${activeTab === "resueltas" ? "category-tab--active" : ""}`}
-          onClick={() => setActiveTab("resueltas")}
-        >
-          Resueltas <span className="category-tab__badge">{resueltas.length}</span>
-        </button>
+      <div style={{ marginBottom: "14px" }}>
+        <Picker
+          label="Categoría"
+          value={activeTab}
+          onChange={(value) => setActiveTab(value as SoporteTab)}
+          searchable={false}
+          options={[
+            { value: "todas", label: `Todas (${rawItems.length})` },
+            { value: "abiertas", label: `Abiertas (${abiertas.length})` },
+            { value: "en_curso", label: `En curso (${enCurso.length})` },
+            { value: "resueltas", label: `Resueltas (${resueltas.length})` },
+          ]}
+        />
       </div>
 
       <div className="panel">

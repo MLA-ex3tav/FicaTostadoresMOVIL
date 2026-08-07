@@ -18,7 +18,7 @@ import {
   type ProductoCatalogo,
 } from "../services/catalog";
 import { generarCotizacionPdf } from "../services/cotizacion-pdf";
-import { registrarOrdenTrabajo, type SolicitudRemota } from "../lib/web-api";
+import type { SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
 import { getCompanyData } from "../lib/company";
@@ -31,9 +31,6 @@ import {
 import { EmptyState } from "../components/EmptyState";
 import {
   agregarCotizacionLocal,
-  confirmarCotizacionLocal,
-  refreshSolicitudes,
-  sincronizarPendientes,
 } from "../services/solicitudes";
 import {
   clearCotizacionDraft,
@@ -348,11 +345,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     setStep((current) => Math.min(current + 1, 3));
   };
 
-  const registrar = async (): Promise<{
-    item: SolicitudRemota;
-    registro: Awaited<ReturnType<typeof registrarOrdenTrabajo>>;
-    localId: string;
-  }> => {
+  const registrar = (): { item: SolicitudRemota; localId: string } => {
     const direccionCompleta = cliente.address.trim();
     const destino = direccionCompleta || "Por acordar con el cliente";
     const company = getCompanyData();
@@ -391,68 +384,27 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
 
     const localId = item.id;
 
-    // Aparece de inmediato en la lista de cotizaciones.
+    // La cotización se guarda solo en este dispositivo y aparece de inmediato
+    // en la lista. No se envía a Firebase.
     agregarCotizacionLocal(item);
 
-    const registro = await registrarOrdenTrabajo({
-      clientName: cliente.name.trim(),
-      clientPhone: cliente.phone.trim(),
-      clientRut: cliente.rut.trim(),
-      clientEmail: cliente.email.trim(),
-      clientComuna: cliente.comuna.trim(),
-      clientAddress: direccionCompleta,
-      message: message.trim(),
-      shipping: {
-        origin: origen,
-        originZip: company.zip ?? "",
-        destination: destino,
-      },
-      products: productsPayload,
-    });
-
-    if (registro.ok && registro.data) {
-      // Cuando la web confirma el registro, la versión remota sobreescribe la local.
-      item.id = registro.data.id;
-      item.estado = registro.data.estado;
-      confirmarCotizacionLocal(localId, {
-        id: registro.data.id,
-        estado: registro.data.estado,
-      });
-      // Trae la versión de Firebase de inmediato, sin esperar el próximo poll.
-      void refreshSolicitudes();
-    } else {
-      // Queda como pendiente de sincronizar; se reintenta en segundo plano.
-      window.setTimeout(() => {
-        void sincronizarPendientes();
-      }, 2000);
-    }
-
-    return { item, registro, localId };
+    return { item, localId };
   };
 
   const guardar = async () => {
     setGenerating(true);
     try {
-      const { registro } = await registrar();
+      registrar();
 
       clearCotizacionDraft();
       onBack();
 
-      if (registro.ok && registro.data) {
-        showToast({
-          title: "Cotización guardada",
-          message: `La cotización ${registro.data.id} quedó registrada en la web.`,
-          tone: "success",
-          durationMs: 5000,
-        });
-      } else {
-        showToast({
-          title: "Cotización guardada localmente",
-          message: "Se guardó en este dispositivo y se sincronizará con la web.",
-          tone: "warning",
-          durationMs: 5000,
-        });
-      }
+      showToast({
+        title: "Cotización guardada",
+        message: "Se guardó en este dispositivo y no se envía a la web.",
+        tone: "success",
+        durationMs: 5000,
+      });
     } catch (error) {
       console.error("Error al guardar cotización:", error);
       showToast({
@@ -468,7 +420,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   const generar = async () => {
     setGenerating(true);
     try {
-      const { item, registro } = await registrar();
+      const { item } = registrar();
 
       const pdf = await generarCotizacionPdf(item);
 
@@ -477,22 +429,13 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
 
       openPdfActions(pdf);
 
-      if (registro.ok && registro.data) {
-        showToast({
-          title: "Cotización generada",
-          message: `La OT ${registro.data.id} quedó registrada y el PDF está listo para compartir.`,
-          tone: "success",
-          icon: "fileText",
-          durationMs: 8000,
-        });
-      } else {
-        showToast({
-          title: "PDF generado sin registrar",
-          message: `No se pudo registrar la OT en la web (${registro.error ?? "desconocido"}). El PDF se generó igual.`,
-          tone: "warning",
-          durationMs: 8000,
-        });
-      }
+      showToast({
+        title: "PDF generado",
+        message: "La cotización quedó guardada en este dispositivo y el PDF está listo para compartir.",
+        tone: "success",
+        icon: "fileText",
+        durationMs: 8000,
+      });
     } catch (error) {
       console.error("Error al generar cotización:", error);
       showToast({
@@ -745,19 +688,19 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                             <div className="card-list__price">{formatPrecio(getPrecioLocal(product))}</div>
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            className="card-list__btn"
-                            onClick={() => agregar(product)}
-                          >
-                            <div className="card-list__top">
-                              <div className="card-list__title">
-                                {String(product.name ?? product.modelo ?? "Sin nombre")}
+<button
+                              type="button"
+                              className="card-list__btn"
+                              onClick={() => agregar(product)}
+                            >
+                              <div className="card-list__top">
+                                <div className="card-list__title">
+                                  {String(product.name ?? product.modelo ?? "Sin nombre")}
+                                </div>
+                                <span className="card-list__add" role="button" aria-label="Agregar">
+                                  <Plus size={14} />
+                                </span>
                               </div>
-                              <span className="btn btn--primary btn--sm">
-                                <Plus size={14} /> Agregar
-                              </span>
-                            </div>
                             <div className="card-list__meta">
                               {product.modelo ? String(product.modelo) : "—"} ·{" "}
                               {String(product.categoria ?? product.category ?? "—")}

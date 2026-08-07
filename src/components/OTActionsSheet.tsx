@@ -1,4 +1,4 @@
-import { FileText, Play, Trash2, X } from "lucide-react";
+import { Eye, FileText, Play, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { SolicitudRemota } from "../lib/web-api";
 import { getSolicitudDate } from "../services/solicitudes";
@@ -18,6 +18,7 @@ interface OTActionsSheetProps {
   busy: boolean;
   advancing: boolean;
   onClose: () => void;
+  onVerDetalles: () => void;
   onAvanzar: () => void;
   onVerPdf: () => void;
   onEliminar: () => void;
@@ -30,6 +31,7 @@ export function OTActionsSheet({
   busy,
   advancing,
   onClose,
+  onVerDetalles,
   onAvanzar,
   onVerPdf,
   onEliminar,
@@ -61,6 +63,12 @@ export function OTActionsSheet({
         </header>
         <div className="more-sheet__list">
           <div className="cotizacion-sheet__divider" aria-hidden="true" />
+          <button type="button" className="more-sheet__item" onClick={onVerDetalles}>
+            <span className="more-sheet__item-icon" aria-hidden="true">
+              <Eye size={20} />
+            </span>
+            <span className="more-sheet__item-label">Detalles</span>
+          </button>
           {next ? (
             <button type="button" className="more-sheet__item" onClick={onAvanzar} disabled={advancing}>
               <span className="more-sheet__item-icon more-sheet__item-icon--success" aria-hidden="true">
