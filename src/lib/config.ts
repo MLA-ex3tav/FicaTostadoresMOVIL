@@ -1,4 +1,4 @@
-export const APP_VERSION = "0.4.3";
+export const APP_VERSION = "0.9.0";
 
 export interface FirebaseClientConfig {
   apiKey: string;
