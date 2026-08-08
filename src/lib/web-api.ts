@@ -237,6 +237,7 @@ export async function fetchSolicitudes(
 }
 
 export interface RegistroOrdenTrabajoPayload {
+  id?: string;
   clientName: string;
   clientPhone?: string;
   clientRut?: string;
@@ -245,6 +246,8 @@ export interface RegistroOrdenTrabajoPayload {
   clientAddress?: string;
   message?: string;
   shipping?: Record<string, unknown> | null;
+  estado?: string;
+  enOT?: boolean;
   products: Array<{
     productId?: string;
     name?: string;
@@ -268,6 +271,15 @@ export interface RegistroOrdenTrabajoResponse {
 export async function registrarOrdenTrabajo(
   payload: RegistroOrdenTrabajoPayload,
 ): Promise<ApiResult<RegistroOrdenTrabajoResponse>> {
+  return crearSolicitudCotizacion({ ...payload, estado: "aprobada_ot", enOT: true });
+}
+
+/**
+ * Envía una cotización directamente a Firebase (Firestore) vía la API protegida de la web.
+ */
+export async function crearSolicitudCotizacion(
+  payload: RegistroOrdenTrabajoPayload,
+): Promise<ApiResult<RegistroOrdenTrabajoResponse>> {
   const { webUrl } = getConfig();
 
   if (!webUrl) {
@@ -279,6 +291,47 @@ export async function registrarOrdenTrabajo(
   try {
     const res = await fetch(`${webUrl}/api/electron/solicitudes`, {
       method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(payload),
+    });
+    const latencyMs = Math.round(performance.now() - started);
+
+    if (res.ok) {
+      const data = (await res.json()) as RegistroOrdenTrabajoResponse;
+      return ok(res.status, latencyMs, data);
+    }
+
+    const apiError = await readApiError(res);
+    return fail(res.status, latencyMs, apiError ?? `HTTP ${res.status}`);
+  } catch (error) {
+    return fail(
+      null,
+      Math.round(performance.now() - started),
+      `Sin respuesta (${errorMessage(error)})`,
+    );
+  }
+}
+
+/**
+ * Edita una cotización EXISTENTE en el mismo documento (vía PATCH), para no
+ * crear una copia duplicada en Firebase. Cada edición actualiza la cotización
+ * con el id indicado sin generar un documento nuevo.
+ */
+export async function actualizarCotizacionSolicitud(
+  id: string,
+  payload: Omit<RegistroOrdenTrabajoPayload, "id">,
+): Promise<ApiResult<RegistroOrdenTrabajoResponse>> {
+  const { webUrl } = getConfig();
+
+  if (!webUrl) {
+    return fail(null, 0, "VITE_WEB_API_URL no definida en .env");
+  }
+
+  const started = performance.now();
+
+  try {
+    const res = await fetch(`${webUrl}/api/electron/solicitudes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(payload),
     });

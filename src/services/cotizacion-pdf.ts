@@ -27,7 +27,7 @@ function text(value: unknown, fallback = "-"): string {
 
 function moneyCLP(value: number): string {
   const rounded = Math.round(value);
-  return `${rounded.toLocaleString("es-CL")}$`;
+  return `$ ${rounded.toLocaleString("es-CL")}`;
 }
 
 function dateLabel(date = new Date()): string {
@@ -147,9 +147,7 @@ export function invalidarCotizacionPdf(id: string): void {
   pdfCache.delete(id);
 }
 
-const IVA_RATE = 0.19;
-
-/** Genera el PDF de la cotización replicando el diseño oficial de FICA. */
+/** Genera el PDF de la cotización replicando el diseño oficial de FICA en MAYÚSCULAS. */
 export async function generarCotizacionPdf(item: SolicitudRemota): Promise<CotizacionPdf> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
@@ -165,32 +163,44 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
     }
   }
 
-  const products = Array.isArray(item.products)
+  const rawProducts = Array.isArray(item.products)
     ? item.products.map((product) => lineItem(product))
     : [];
-  const neto = products.reduce((sum, product) => sum + product.quantity * product.unitPrice, 0);
-  const iva = Math.round(neto * IVA_RATE);
-  const total = neto + iva;
+
+  const products = rawProducts.map((p) => {
+    // El precio guardado en la app ya incluye IVA
+    const unitPriceConIva = p.unitPrice;
+    return {
+      ...p,
+      code: p.code.toUpperCase(),
+      name: p.name.toUpperCase(),
+      unitPriceConIva,
+      totalConIva: unitPriceConIva * p.quantity,
+    };
+  });
+
+  const totalConIva = products.reduce((sum, product) => sum + product.totalConIva, 0);
 
   const company = getCompanyData();
-  const companyName = text(company.name, "TOSTADORES FICA LTDA");
-  const companyTaxId = text(company.taxId, "76.683.592-9");
+  const rawCompanyName = text(company.name, "EMPRESAS FICA LTDA").toUpperCase();
+  const companyName = rawCompanyName.includes("TOSTADORES FICA") ? "EMPRESAS FICA LTDA" : rawCompanyName;
+  const companyTaxId = text(company.taxId, "76.683.592-9").toUpperCase();
   const companyAddress = text(
-    [company.address, company.city, company.region].filter(Boolean).join(", "),
-    "San Ramón Pc. 39 Lt. 12-19, Padre Las Casas, Chile",
-  );
-  const companyPhone = text(company.phone, "+56 9 9002 0089");
-  const companyEmail = text(company.email, "administracion@tostadoresfica.cl");
-  const companyGiro = text(company.giro, "Reparación y mantención de maq.");
-  const companyBank = text(company.bankName, "BANCO SCOTIABANK");
-  const companyAccount = text(company.bankAccount, "CUENTA CORRIENTE 979706529");
+    [company.address, company.city, company.region, company.country].filter(Boolean).join(" "),
+    "SAN RAMON PS39 LTD12-18 PADRE LAS CASAS REGION DE LA ARAUCANIA, CHILE",
+  ).toUpperCase();
+  const companyPhone = text(company.phone, "+56 9 9002 0089").toUpperCase();
+  const companyEmail = text(company.email, "ADMINISTRACION@TOSTADORESFICA.CL").toUpperCase();
+  const companyGiro = text(company.giro, "FABRICA DE MAQUINARIA PARA FRUTOS SECOS").toUpperCase();
+  const companyBank = text(company.bankName, "BANCO SCOTIABANK").toUpperCase();
+  const companyAccount = text(company.bankAccount, "CUENTA CORRIENTE 979706529").toUpperCase();
 
-  const clientName = text(item.clientName, "Sin cliente registrado");
-  const clientRut = text(item.clientRut, "N/A");
-  const clientPhone = text(item.clientPhone, "N/A");
-  const clientEmail = text(item.clientEmail, "N/A");
-  const clientAddress = text(item.clientAddress, "Por acordar con el cliente");
-  const clientComuna = comunaFrom(clientAddress) || text(item.clientComuna, "N/A");
+  const clientName = text(item.clientName, "SIN CLIENTE REGISTRADO").toUpperCase();
+  const clientRut = text(item.clientRut, "N/A").toUpperCase();
+  const clientPhone = text(item.clientPhone, "N/A").toUpperCase();
+  const clientEmail = text(item.clientEmail, "N/A").toUpperCase();
+  const clientAddress = text(item.clientAddress, "POR ACORDAR CON EL CLIENTE").toUpperCase();
+  const clientComuna = (comunaFrom(clientAddress) || text(item.clientComuna, "N/A")).toUpperCase();
 
   // ── 1. Encabezado: logo + nombre empresa (izquierda) / COTIZACIÓN (derecha) ──
   const logo = await imageDataUrl("/assets/logo.webp");
@@ -203,14 +213,14 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...COLOR_DARK);
   doc.setFontSize(13);
-  doc.text(companyName.toUpperCase().slice(0, 40), headerTextX, 18);
+  doc.text(companyName.slice(0, 40), headerTextX, 18);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(...COLOR_TEXT_MUTED);
   doc.text(`RUT: ${companyTaxId}`, headerTextX, 23.5);
-  doc.text(`GIRO: ${companyGiro}`.slice(0, 52), headerTextX, 27.5);
-  doc.text(`DIRECCIÓN: ${companyAddress}`.slice(0, 58), headerTextX, 31.5);
+  doc.text(`GIRO: ${companyGiro}`.slice(0, 65), headerTextX, 27.5);
+  doc.text(`DIRECCIÓN: ${companyAddress}`.slice(0, 85), headerTextX, 31.5);
 
   // Banner COTIZACIÓN
   const docLabel = "COTIZACIÓN";
@@ -221,7 +231,7 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
 
   doc.setFontSize(8);
   doc.setTextColor(...COLOR_DARK);
-  doc.text(`Nº ${text(item.id).slice(0, 16)}`, pageWidth - margin, 27, { align: "right" });
+  doc.text(`Nº ${text(item.id).toUpperCase().slice(0, 16)}`, pageWidth - margin, 27, { align: "right" });
   doc.text(`FECHA EMISIÓN: ${dateLabel()}`, pageWidth - margin, 31.5, { align: "right" });
   doc.text("VALIDEZ: 15 DÍAS", pageWidth - margin, 35.5, { align: "right" });
 
@@ -229,49 +239,8 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.setLineWidth(0.5);
   doc.line(margin, 39, pageWidth - margin, 39);
 
-  // ── 2. Bloques: DATOS EMPRESA / CUENTA BANCARIA ──
-  const blockY = 43;
-  const blockH = 34;
-  const blockW = (pageWidth - margin * 2 - 6) / 2;
-
-  const drawEmpresaBlock = (x: number, title: string, lines: string[]) => {
-    doc.setFillColor(...COLOR_LIGHT_BG);
-    doc.setDrawColor(...COLOR_BORDER);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(x, blockY, blockW, blockH, 2, 2, "FD");
-
-    doc.setFillColor(...COLOR_DARK);
-    doc.rect(x, blockY, 2.5, blockH, "F");
-
-    doc.setTextColor(...COLOR_DARK);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text(title, x + 6, blockY + 6);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...COLOR_TEXT_DARK);
-    lines.slice(0, 4).forEach((line, index) => {
-      doc.text(line.slice(0, 48), x + 6, blockY + 12.5 + index * 5.5);
-    });
-  };
-
-  drawEmpresaBlock(margin, "DATOS EMPRESA:", [
-    companyName.toUpperCase(),
-    `RUT: ${companyTaxId}`,
-    `GIRO: ${companyGiro}`,
-    `CASA MATRIZ: ${companyAddress}`,
-  ]);
-
-  drawEmpresaBlock(margin + blockW + 6, "CUENTA BANCARIA:", [
-    companyName.toUpperCase(),
-    `RUT ${companyTaxId}`,
-    companyBank.toUpperCase(),
-    companyAccount.toUpperCase(),
-  ]);
-
-  // ── 3. Datos del Cliente ──
-  const clientY = blockY + blockH + 6;
+  // ── 2. Datos del Cliente ──
+  const clientY = 43;
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(...COLOR_BORDER);
   doc.setLineWidth(0.3);
@@ -321,10 +290,10 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.setFont("helvetica", "normal");
   doc.text(clientPhone.slice(0, 24), clientRightX + 20, clientY + 24.5);
 
-  // ── 4. Tabla de Productos ──
+  // ── 3. Tabla de Productos ──
   const tableY = clientY + 36;
-  const colX = [margin, 102, 126, 150, 162];
-  const colW = [88, 24, 24, 12, 34];
+  const colX = [margin, 96, 126, 150, 162];
+  const colW = [82, 30, 24, 12, 34];
   const tableW = pageWidth - margin * 2;
 
   doc.setFillColor(...COLOR_DARK);
@@ -337,67 +306,69 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.text("CÓDIGO", colX[1] + 3, tableY + 5.5);
   doc.text("VALOR UNIDAD", colX[2] + colW[2] - 3, tableY + 5.5, { align: "right" });
   doc.text("CANTIDAD", colX[3] + colW[3] / 2, tableY + 5.5, { align: "center" });
-  doc.text("VALOR TOTAL NETO", colX[4] + colW[4] - 3, tableY + 5.5, { align: "right" });
+  doc.text("VALOR TOTAL", colX[4] + colW[4] - 3, tableY + 5.5, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...COLOR_TEXT_DARK);
 
   const displayRows = products.length > 0
     ? products
-    : [{ code: "FT-GEN", name: "Servicio de Fabricación de Maquinaria", quantity: 1, unitPrice: neto || 0 }];
+    : [{ code: "FT-GEN", name: "SERVICIO DE FABRICACIÓN DE MAQUINARIA", quantity: 1, unitPriceConIva: totalConIva || 0, totalConIva: totalConIva || 0 }];
 
-  displayRows.slice(0, 8).forEach((product, index) => {
-    const rowY = tableY + 8 + index * 9;
+  let currentY = tableY + 8;
+
+  displayRows.forEach((product, index) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+
+    const nameLines: string[] = doc.splitTextToSize(product.name, colW[0] - 4);
+    const lineCount = nameLines.length;
+    const rowH = Math.max(9, 6 + (lineCount - 1) * 4.5);
+
     const bg: RGB = index % 2 === 0 ? COLOR_WHITE : COLOR_LIGHT_BG;
 
     doc.setFillColor(...bg);
-    doc.rect(margin, rowY, tableW, 9, "F");
+    doc.rect(margin, currentY, tableW, rowH, "F");
     doc.setDrawColor(...COLOR_BORDER);
     doc.setLineWidth(0.2);
-    doc.line(margin, rowY + 9, margin + tableW, rowY + 9);
+    doc.line(margin, currentY + rowH, margin + tableW, currentY + rowH);
 
-    doc.text(product.name.slice(0, 54), colX[0] + 3, rowY + 6);
-    doc.text(product.code.slice(0, 14), colX[1] + 3, rowY + 6);
-    doc.text(moneyCLP(product.unitPrice), colX[2] + colW[2] - 3, rowY + 6, { align: "right" });
-    doc.text(String(product.quantity), colX[3] + colW[3] / 2, rowY + 6, { align: "center" });
+    doc.setTextColor(...COLOR_TEXT_DARK);
+    nameLines.forEach((lineText, lineIdx) => {
+      doc.text(lineText, colX[0] + 3, currentY + 5.5 + lineIdx * 4.5);
+    });
+
+    const textY = currentY + 5.5;
+    doc.text(product.code.slice(0, 16), colX[1] + 3, textY);
+    doc.text(moneyCLP(product.unitPriceConIva), colX[2] + colW[2] - 3, textY, { align: "right" });
+    doc.text(String(product.quantity), colX[3] + colW[3] / 2, textY, { align: "center" });
     doc.setFont("helvetica", "bold");
-    doc.text(moneyCLP(product.unitPrice * product.quantity), colX[4] + colW[4] - 3, rowY + 6, { align: "right" });
+    doc.text(moneyCLP(product.totalConIva), colX[4] + colW[4] - 3, textY, { align: "right" });
     doc.setFont("helvetica", "normal");
+
+    currentY += rowH;
   });
 
-  // ── 5. Totales: NETO / IVA / TOTAL ──
-  const totalsY = tableY + 8 + Math.min(displayRows.length, 8) * 9 + 4;
-  const totalsW = 52;
+  // ── 4. Totales: VALOR TOTAL (IVA INCLUIDO) ──
+  const totalsY = currentY + 4;
+  const totalsW = 72;
   const totalsX = pageWidth - margin - totalsW;
-  const tRowH = 8;
-
-  doc.setFillColor(...COLOR_WHITE);
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(totalsX, totalsY, totalsW, tRowH * 2 + 9, 1, 1, "FD");
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.text("NETO", totalsX + 4, totalsY + 5.5);
-  doc.setTextColor(...COLOR_TEXT_DARK);
-  doc.text(moneyCLP(neto), totalsX + totalsW - 4, totalsY + 5.5, { align: "right" });
-
-  doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.text("IVA 19%", totalsX + 4, totalsY + tRowH + 5.5);
-  doc.setTextColor(...COLOR_TEXT_DARK);
-  doc.text(moneyCLP(iva), totalsX + totalsW - 4, totalsY + tRowH + 5.5, { align: "right" });
+  const totalsH = 14;
 
   doc.setFillColor(...COLOR_PRIMARY);
-  doc.roundedRect(totalsX, totalsY + tRowH * 2, totalsW, 9, 1, 1, "F");
-  doc.setTextColor(...COLOR_WHITE);
-  doc.setFontSize(9);
-  doc.text("TOTAL", totalsX + 4, totalsY + tRowH * 2 + 6);
-  doc.text(moneyCLP(total), totalsX + totalsW - 4, totalsY + tRowH * 2 + 6, { align: "right" });
+  doc.setDrawColor(...COLOR_PRIMARY);
+  doc.roundedRect(totalsX, totalsY, totalsW, totalsH, 1.5, 1.5, "F");
 
-  // ── 6. Dirección y Observación ──
-  const notesY = totalsY + 30;
-  const notesH = 22;
+  doc.setTextColor(...COLOR_WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("VALOR TOTAL (IVA INCLUIDO)", totalsX + 5, totalsY + 5.5);
+  doc.setFontSize(11);
+  doc.text(moneyCLP(totalConIva), totalsX + totalsW - 5, totalsY + 10.5, { align: "right" });
+
+  // ── 5. Observación ──
+  const notesY = totalsY + totalsH + 5;
+  const notesH = 14;
   doc.setFillColor(...COLOR_LIGHT_BG);
   doc.setDrawColor(...COLOR_BORDER);
   doc.roundedRect(margin, notesY, pageWidth - margin * 2, notesH, 2, 2, "FD");
@@ -405,24 +376,67 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.setTextColor(...COLOR_DARK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("DIRECCIÓN:", margin + 4, notesY + 6);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLOR_TEXT_MUTED);
-  doc.text(clientAddress.slice(0, 70), margin + 4, notesY + 11);
-
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLOR_DARK);
-  doc.text("OBSERVACIÓN:", margin + 4, notesY + 16);
+  doc.text("OBSERVACIÓN:", margin + 4, notesY + 5.5);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...COLOR_TEXT_MUTED);
   doc.text(
-    text(item.message, "Sin observaciones adicionales registradas.").slice(0, 76),
+    text(item.message, "SIN OBSERVACIONES ADICIONALES REGISTRADAS.").toUpperCase().slice(0, 85),
     margin + 4,
-    notesY + 21,
+    notesY + 10.5,
   );
 
+  // ── 6. Bloques de Información Inferior: DATOS EMPRESA / CUENTA BANCARIA ──
+  const blockY = notesY + notesH + 5;
+  const blockH = 34;
+  const blockW = (pageWidth - margin * 2 - 6) / 2;
+
+  const drawEmpresaBlock = (x: number, title: string, lines: Array<{ text: string; isBold?: boolean }>) => {
+    doc.setFillColor(...COLOR_LIGHT_BG);
+    doc.setDrawColor(...COLOR_BORDER);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, blockY, blockW, blockH, 2, 2, "FD");
+
+    doc.setFillColor(...COLOR_DARK);
+    doc.rect(x, blockY, 2.5, blockH, "F");
+
+    doc.setTextColor(...COLOR_DARK);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(title, x + 6, blockY + 5.5);
+
+    doc.setTextColor(...COLOR_TEXT_DARK);
+
+    let lineY = blockY + 10.5;
+    lines.forEach((item) => {
+      doc.setFont("helvetica", item.isBold ? "bold" : "normal");
+      doc.setFontSize(item.isBold ? 7.2 : 6.8);
+      const wrapped: string[] = doc.splitTextToSize(item.text, blockW - 10);
+      wrapped.forEach((subLine) => {
+        if (lineY <= blockY + blockH - 2) {
+          doc.text(subLine, x + 6, lineY);
+          lineY += 4.5;
+        }
+      });
+    });
+  };
+
+  drawEmpresaBlock(margin, "DATOS EMPRESA:", [
+    { text: companyName, isBold: true },
+    { text: `RUT: ${companyTaxId}` },
+    { text: `GIRO: ${companyGiro}` },
+    { text: `CASA MATRIZ: ${companyAddress}` },
+  ]);
+
+  drawEmpresaBlock(margin + blockW + 6, "CUENTA BANCARIA:", [
+    { text: companyName, isBold: true },
+    { text: `RUT: ${companyTaxId}` },
+    { text: companyBank },
+    { text: companyAccount },
+    { text: `EMAIL: ${companyEmail}` },
+  ]);
+
   // ── 7. Nota de plazos ──
-  const noteY = notesY + notesH + 6;
+  const noteY = blockY + blockH + 5;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(8);
   doc.setTextColor(...COLOR_TEXT_MUTED);
@@ -441,11 +455,11 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.setTextColor(...COLOR_WHITE);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text(`${companyName.toUpperCase()}  ·  RUT: ${companyTaxId}`.slice(0, 48), margin, footerY + 5.5);
+  doc.text(`${companyName}  ·  RUT: ${companyTaxId}`.slice(0, 48), margin, footerY + 5.5);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.text(`Casa Matriz: ${companyAddress}  |  Tel: ${companyPhone}`.slice(0, 74), margin, footerY + 10);
+  doc.text(`CASA MATRIZ: ${companyAddress}  |  TEL: ${companyPhone}`.slice(0, 74), margin, footerY + 10);
 
   doc.setFont("helvetica", "bold");
   doc.text("CONTACTO:", pageWidth - margin - 72, footerY + 5.5);
@@ -453,7 +467,7 @@ export async function generarCotizacionPdf(item: SolicitudRemota): Promise<Cotiz
   doc.text(`${companyEmail}`.slice(0, 34), pageWidth - margin - 72, footerY + 10);
 
   const blob = doc.output("blob");
-  const fileName = `COT-${text(item.id, "sin-numero")}.pdf`;
+  const fileName = `COT-${text(item.id, "SIN-NUMERO").toUpperCase()}.pdf`;
   const url = URL.createObjectURL(blob);
 
   return { blob, fileName, url, item };

@@ -18,7 +18,7 @@ import {
   type ProductoCatalogo,
 } from "../services/catalog";
 import { generarCotizacionPdf } from "../services/cotizacion-pdf";
-import type { SolicitudRemota } from "../lib/web-api";
+import type { RegistroOrdenTrabajoPayload, SolicitudRemota } from "../lib/web-api";
 import { showToast } from "../ui/toast";
 import { openPdfActions } from "../ui/pdf-actions";
 import { getCompanyData } from "../lib/company";
@@ -30,7 +30,7 @@ import {
 } from "../lib/product-colors";
 import { EmptyState } from "../components/EmptyState";
 import {
-  agregarCotizacionLocal,
+  enviarCotizacionAFirebase,
 } from "../services/solicitudes";
 import {
   clearCotizacionDraft,
@@ -345,7 +345,8 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     setStep((current) => Math.min(current + 1, 3));
   };
 
-  const registrar = (): { item: SolicitudRemota; localId: string } => {
+  const prepararItemYPayload = (): { item: SolicitudRemota; payload: RegistroOrdenTrabajoPayload } => {
+    const quoteId = `COT-${Date.now().toString().slice(-6)}`;
     const direccionCompleta = cliente.address.trim();
     const destino = direccionCompleta || "Por acordar con el cliente";
     const company = getCompanyData();
@@ -362,8 +363,27 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       selectedColor,
     }));
 
+    const payload: RegistroOrdenTrabajoPayload & { id?: string } = {
+      id: quoteId,
+      clientName: cliente.name.trim(),
+      clientPhone: cliente.phone.trim(),
+      clientRut: cliente.rut.trim(),
+      clientEmail: cliente.email.trim(),
+      clientComuna: cliente.comuna.trim(),
+      clientAddress: direccionCompleta,
+      message: message.trim(),
+      shipping: {
+        origin: origen,
+        originZip: company.zip ?? "",
+        destination: destino,
+      },
+      products: productsPayload,
+      estado: "pendiente",
+      enOT: false,
+    };
+
     const item: SolicitudRemota = {
-      id: `COT-${Date.now().toString().slice(-6)}`,
+      id: quoteId,
       clientName: cliente.name.trim(),
       clientPhone: cliente.phone.trim(),
       clientRut: cliente.rut.trim(),
@@ -382,29 +402,33 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       estado: "pendiente",
     };
 
-    const localId = item.id;
-
-    // La cotización se guarda solo en este dispositivo y aparece de inmediato
-    // en la lista. No se envía a Firebase.
-    agregarCotizacionLocal(item);
-
-    return { item, localId };
+    return { item, payload };
   };
 
   const guardar = async () => {
     setGenerating(true);
     try {
-      registrar();
+      const { item, payload } = prepararItemYPayload();
+      const res = await enviarCotizacionAFirebase(item, payload);
 
       clearCotizacionDraft();
       onBack();
 
-      showToast({
-        title: "Cotización guardada",
-        message: "Se guardó en este dispositivo y no se envía a la web.",
-        tone: "success",
-        durationMs: 5000,
-      });
+      if (res.offline) {
+        showToast({
+          title: "Cotización guardada (offline)",
+          message: "Se guardó en este dispositivo y se sincronizará a Firebase al conectar a internet.",
+          tone: "warning",
+          durationMs: 6000,
+        });
+      } else {
+        showToast({
+          title: "Cotización enviada a Firebase",
+          message: "Se registró exitosamente en Firebase.",
+          tone: "success",
+          durationMs: 5000,
+        });
+      }
     } catch (error) {
       console.error("Error al guardar cotización:", error);
       showToast({
@@ -420,22 +444,34 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   const generar = async () => {
     setGenerating(true);
     try {
-      const { item } = registrar();
+      const { item, payload } = prepararItemYPayload();
+      const res = await enviarCotizacionAFirebase(item, payload);
 
-      const pdf = await generarCotizacionPdf(item);
+      const itemParaPdf = res.id ? { ...item, id: res.id } : item;
+      const pdf = await generarCotizacionPdf(itemParaPdf);
 
       clearCotizacionDraft();
       onBack();
 
       openPdfActions(pdf);
 
-      showToast({
-        title: "PDF generado",
-        message: "La cotización quedó guardada en este dispositivo y el PDF está listo para compartir.",
-        tone: "success",
-        icon: "fileText",
-        durationMs: 8000,
-      });
+      if (res.offline) {
+        showToast({
+          title: "PDF generado (guardada offline)",
+          message: "El PDF está listo y la cotización se enviará a Firebase cuando haya internet.",
+          tone: "warning",
+          icon: "fileText",
+          durationMs: 8000,
+        });
+      } else {
+        showToast({
+          title: "PDF generado",
+          message: "La cotización fue enviada a Firebase y el PDF está listo para compartir.",
+          tone: "success",
+          icon: "fileText",
+          durationMs: 8000,
+        });
+      }
     } catch (error) {
       console.error("Error al generar cotización:", error);
       showToast({

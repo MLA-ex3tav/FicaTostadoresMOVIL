@@ -5,6 +5,8 @@ import { findProducto, getPrecioLocal, getCatalogo, loadCatalogo } from "./catal
 import { showToast } from "../ui/toast";
 import { openPdfViewer } from "../ui/pdf-viewer";
 
+import { getCompanyData } from "../lib/company";
+
 type RGB = [number, number, number];
 
 const BLACK: RGB = [0, 0, 0];
@@ -12,17 +14,6 @@ const WHITE: RGB = [255, 255, 255];
 const GRAY_MED: RGB = [127, 127, 127];
 const GRAY_LIGHT: RGB = [231, 230, 230];
 const GRAY_VLIGHT: RGB = [242, 242, 242];
-
-/** Datos de la empresa según el OT oficial (EMPRESAS FICA LTDA). */
-const OT_COMPANY = {
-  name: "EMPRESAS FICA LTDA.",
-  taxId: "76.683.592-9",
-  giro: "FABRICA",
-  address: "SAN RAMON PC. 39 LT. 12 - 19 PADRE LAS CASAS",
-  bankName: "BANCO DE CHILE",
-  bankAccount: "CUENTA CORRIENTE 1440487600",
-  email: "TOSTADORESFICA@GMAIL.COM",
-};
 
 const IVA_RATE = 0.19;
 
@@ -89,15 +80,24 @@ function cellText(
 ): void {
   const style = opts.bold ? "bold" : "normal";
   doc.setFont("helvetica", style);
-  doc.setFontSize(opts.size ?? 8.4);
+
+  const strVal = String(value ?? "");
+  const baseSize = opts.size ?? 8.4;
+  const textWidth = (doc.getStringUnitWidth(strVal) * baseSize) / doc.internal.scaleFactor;
+  let finalSize = baseSize;
+  if (textWidth > w - 4 && strVal.length > 0) {
+    finalSize = Math.max(5.5, baseSize * ((w - 4) / textWidth));
+  }
+
+  doc.setFontSize(finalSize);
   doc.setTextColor(...(opts.color ?? WHITE));
-  const baseline = y + h - 1.4;
+  const baseline = y + h - 2.2;
   if (opts.align === "center") {
-    doc.text(value, x + w / 2, baseline, { align: "center" });
+    doc.text(strVal, x + w / 2, baseline, { align: "center" });
   } else if (opts.align === "right") {
-    doc.text(value, x + w - 3, baseline, { align: "right" });
+    doc.text(strVal, x + w - 3, baseline, { align: "right" });
   } else {
-    doc.text(value, x + 3, baseline);
+    doc.text(strVal, x + 3, baseline);
   }
 }
 
@@ -116,9 +116,9 @@ function otLineItem(record: unknown): {
     : numberFrom(rec.price, rec.precio, 0);
 
   return {
-    code: text(rec.productId ?? product?.id),
-    name: text(rec.name ?? product?.name),
-    color: text(rec.color, ""),
+    code: text(rec.productId ?? product?.id).toUpperCase(),
+    name: text(rec.name ?? product?.name).toUpperCase(),
+    color: text(rec.color, "").toUpperCase(),
     quantity,
     unitPrice,
   };
@@ -131,10 +131,6 @@ export interface OtPdf {
   item: SolicitudRemota;
 }
 
-/**
- * Genera el PDF de la Orden de Trabajo replicando el diseño oficial de FICA
- * (formato Legal vertical, 612x1008 pt). Referencia: ficadatos/OT.pdf.
- */
 export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: [612, 1008] });
 
@@ -165,27 +161,38 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
   const iva = subtotal - neto;
   const total = subtotal;
 
-  const clientName = text(item.clientName);
-  const clientRut = text(item.clientRut);
-  const clientAddress = text(item.clientAddress);
-  const clientComuna = comunaFrom(clientAddress) || text(item.clientComuna);
-  const clientPhone = text(item.clientPhone);
-  const clientEmail = text(item.clientEmail);
-  const contact = text(item.contact ?? item.clientName);
-  const activity = text(item.activity ?? item.actividad);
-  const message = text(item.message);
+  const company = getCompanyData();
+  const rawCompanyName = text(company.name, "EMPRESAS FICA LTDA.").toUpperCase();
+  const companyName = rawCompanyName.includes("TOSTADORES FICA") ? "EMPRESAS FICA LTDA." : rawCompanyName;
+  const companyTaxId = text(company.taxId, "76.683.592-9").toUpperCase();
+  const companyAddress = text(
+    [company.address, company.city, company.region, company.country].filter(Boolean).join(" "),
+    "SAN RAMON PS39 LTD12-18 PADRE LAS CASAS REGION DE LA ARAUCANIA, CHILE",
+  ).toUpperCase();
+  const companyGiro = text(company.giro, "FABRICA DE MAQUINARIA PARA FRUTOS SECOS").toUpperCase();
+  const companyBank = text(company.bankName, "BANCO SCOTIABANK").toUpperCase();
+  const companyAccount = text(company.bankAccount, "CUENTA CORRIENTE 979706529").toUpperCase();
+  const companyEmail = text(company.email, "ADMINISTRACION@TOSTADORESFICA.CL").toUpperCase();
 
-  const numeroOt = text(item.id);
+  const clientName = text(item.clientName).toUpperCase();
+  const clientRut = text(item.clientRut).toUpperCase();
+  const clientAddress = text(item.clientAddress).toUpperCase();
+  const clientComuna = (comunaFrom(clientAddress) || text(item.clientComuna)).toUpperCase();
+  const clientPhone = text(item.clientPhone).toUpperCase();
+  const clientEmail = text(item.clientEmail).toUpperCase();
+  const contact = text(item.contact ?? item.clientName).toUpperCase();
+  const activity = text(item.activity ?? item.actividad).toUpperCase();
+  const message = text(item.message).toUpperCase();
+
+  const numeroOt = text(item.id).toUpperCase();
   const fechaEmision = dateSlash();
   const fechaEntrega = "POR DEFINIR";
 
-  // ── 1. Título ──
   box(doc, 35.8, 121.1, 526.7, 19.5, BLACK);
   cellText(doc, 35.8, 121.1, 526.7, 19.5, `ORDEN DE TRABAJO N° ${numeroOt}`, {
     align: "center",
   });
 
-  // ── 2. Fila de emisión ──
   box(doc, 35.8, 149, 83.0, 14, BLACK);
   cellText(doc, 35.8, 149, 83.0, 14, "EMISIÓN");
   box(doc, 118.8, 149, 182.1, 14, GRAY_LIGHT);
@@ -195,7 +202,6 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
   box(doc, 367.9, 149, 193.9, 14, GRAY_LIGHT);
   cellText(doc, 367.9, 149, 193.9, 14, fechaEntrega, { color: BLACK, bold: true });
 
-  // ── 3. Datos del cliente ──
   const clientRows: Array<[string, string, string, string]> = [
     ["NOMBRE", clientName, "RUT", clientRut],
     ["DIRECCIÓN", clientAddress, "COMUNA", clientComuna],
@@ -215,7 +221,6 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     rowY += 16.8;
   }
 
-  // ── 4. Tabla de productos ──
   const HEADER_Y = 252.2;
   const HEADER_H = 13.3;
   const colX = [35.8, 85.4, 300.9, 367.9, 427.8, 474.6];
@@ -244,7 +249,7 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     box(doc, colX[0], prodY, colW[0], ROW_H);
     cellText(doc, colX[0], prodY, colW[0], ROW_H, p.code, { color: BLACK });
     box(doc, colX[1], prodY, colW[1], ROW_H);
-    cellText(doc, colX[1], prodY, colW[1], ROW_H, p.name.slice(0, 40), { color: BLACK });
+    cellText(doc, colX[1], prodY, colW[1], ROW_H, p.name, { color: BLACK });
     box(doc, colX[2], prodY, colW[2], ROW_H);
     cellText(doc, colX[2], prodY, colW[2], ROW_H, p.color, { color: BLACK });
     box(doc, colX[3], prodY, colW[3], ROW_H);
@@ -265,7 +270,6 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     prodY += ROW_H;
   }
 
-  // Bloque de observación (izquierda) + totales (derecha)
   const blockY = prodY;
   const totalsRows: Array<[string, string, boolean]> = [
     ["SUBTOTAL", moneyCLP(subtotal), false],
@@ -290,26 +294,30 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     ty += ROW_H;
   }
 
-  // Nota de observación (izquierda, junto a los totales)
+  const totalsBlockHeight = totalsRows.length * ROW_H;
+  const obsWidth = colX[4] - 35.8 - 4;
   const noteLine = `OBSERVACIÓN: ${message || "-"}${extraCount > 0 ? ` (+${extraCount} productos más)` : ""}`;
-  const noteBoxTop = blockY + 0.7;
-  const noteBoxBottom = 342.9;
-  box(doc, 36.5, noteBoxTop, 391.3, Math.max(8, noteBoxBottom - noteBoxTop), GRAY_VLIGHT);
+  box(doc, 35.8, blockY, obsWidth, totalsBlockHeight, GRAY_VLIGHT);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.4);
   doc.setTextColor(...BLACK);
-  doc.text(noteLine.slice(0, 60), 40, noteBoxTop + 11);
+  const obsWrapped: string[] = doc.splitTextToSize(noteLine, obsWidth - 8);
+  obsWrapped.slice(0, 4).forEach((obsSubLine, obsIdx) => {
+    doc.text(obsSubLine, 40, blockY + 11 + obsIdx * 10);
+  });
 
-  // ── 5. Gestión de entrega/despacho ──
-  box(doc, 35.8, 356.2, 526.7, 11.8, GRAY_MED);
-  cellText(doc, 35.8, 356.2, 526.7, 11.8, "GESTIÓN DE ENTREGA/DESPACHO", { align: "center" });
+  const nextSectionY = blockY + totalsBlockHeight + 10;
+
+  let gy = nextSectionY;
+  box(doc, 35.8, gy, 526.7, 11.8, GRAY_MED);
+  cellText(doc, 35.8, gy, 526.7, 11.8, "GESTIÓN DE ENTREGA/DESPACHO", { align: "center" });
 
   const gestRows: Array<[string, string, string, string]> = [
     ["FECHA", "", "DIRECCIÓN", clientAddress],
-    ["FORMA DE ENTREGA", text(item.formaEntrega), "UBICACIÓN", text(item.ubicacion)],
+    ["FORMA DE ENTREGA", text(item.formaEntrega).toUpperCase(), "UBICACIÓN", text(item.ubicacion).toUpperCase()],
     ["CONTACTO", contact, "VALOR", "-"],
   ];
-  let gy = 368.0;
+  gy += 11.8;
   for (const [labelLeft, valueLeft, labelRight, valueRight] of gestRows) {
     box(doc, 35.8, gy, 83.0, 13.3, GRAY_MED);
     cellText(doc, 35.8, gy, 83.0, 13.3, labelLeft);
@@ -322,9 +330,9 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     gy += 13.3;
   }
 
-  // ── 6. Registro de pagos ──
-  box(doc, 35.8, 420.3, 526.7, 14, BLACK);
-  cellText(doc, 35.8, 420.3, 526.7, 14, "REGISTRO DE PAGOS", { align: "center" });
+  let payY = gy + 8;
+  box(doc, 35.8, payY, 526.7, 14, BLACK);
+  cellText(doc, 35.8, payY, 526.7, 14, "REGISTRO DE PAGOS", { align: "center" });
 
   const payCols: Array<{ x: number; w: number; label: string; fill?: RGB }> = [
     { x: 35.8, w: 83.0, label: "FECHA", fill: BLACK },
@@ -333,7 +341,7 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     { x: 367.9, w: 106.7, label: "B. EMPRESA", fill: BLACK },
     { x: 474.6, w: 87.2, label: "OBSERVACIÓN", fill: BLACK },
   ];
-  const payHeaderY = 433.6;
+  const payHeaderY = payY + 14;
   const payHeaderH = 13.9;
   for (const col of payCols) {
     box(doc, col.x, payHeaderY, col.w, payHeaderH, col.fill);
@@ -350,7 +358,6 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     }
     py += 13.3;
   }
-  py += 12.9; // salto hasta la fila de saldo
 
   box(doc, 35.8, py, 83.0, 13.9, BLACK);
   cellText(doc, 35.8, py, 83.0, 13.9, "SALDO ABONADO");
@@ -361,7 +368,7 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
   box(doc, 367.9, py, 193.9, 13.9);
   cellText(doc, 367.9, py, 193.9, 13.9, moneyCLP(total), { color: BLACK, align: "right" });
 
-  const totalRowY = py + 13.2;
+  const totalRowY = py + 13.9;
   box(doc, 35.8, totalRowY, 83.0, 14, BLACK);
   cellText(doc, 35.8, totalRowY, 83.0, 14, "TOTAL");
   box(doc, 118.8, totalRowY, 182.1, 14);
@@ -375,15 +382,15 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
   box(doc, 367.9, totalRowY, 193.9, 14);
   cellText(doc, 367.9, totalRowY, 193.9, 14, "", { color: BLACK, align: "right", bold: true });
 
-  // ── 7. Registro de equipo ──
-  box(doc, 35.8, 539.6, 526.7, 14, GRAY_MED);
-  cellText(doc, 35.8, 539.6, 526.7, 14, "REGISTRO DE EQUIPO", { align: "center" });
+  let eqY = totalRowY + 14 + 8;
+  box(doc, 35.8, eqY, 526.7, 14, GRAY_MED);
+  cellText(doc, 35.8, eqY, 526.7, 14, "REGISTRO DE EQUIPO", { align: "center" });
 
   const eqRows: Array<[string, string, string, string]> = [
-    ["CAPACITACIÓN", text(item.capacitacion), "GARANTÍA", "1 AÑO"],
-    ["N° DE SERIE EQUIPO", text(item.numeroSerie), "ACTIVIDAD", ""],
+    ["CAPACITACIÓN", text(item.capacitacion).toUpperCase(), "GARANTÍA", "1 AÑO"],
+    ["N° DE SERIE EQUIPO", text(item.numeroSerie).toUpperCase(), "ACTIVIDAD", ""],
   ];
-  let ey = 553.6;
+  let ey = eqY + 14;
   for (const [labelLeft, valueLeft, labelRight, valueRight] of eqRows) {
     box(doc, 35.8, ey, 83.0, 13.2, GRAY_MED);
     cellText(doc, 35.8, ey, 83.0, 13.2, labelLeft);
@@ -396,98 +403,121 @@ export async function generarOtPdf(item: SolicitudRemota): Promise<OtPdf> {
     ey += 13.2;
   }
 
-  // ── 8. Notas legales ──
-  box(doc, 35.8, 592.6, 526.7, 49.5, GRAY_LIGHT);
+  let legalY = ey + 8;
+  box(doc, 35.8, legalY, 526.7, 46, GRAY_LIGHT);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.4);
+  doc.setFontSize(7.2);
   doc.setTextColor(...BLACK);
   const legalParagraphs = [
     "LA FÁBRICA POSEE PLAZOS DE ENTREGA DE 20-25 DÍAS QUE PUEDEN VARIAR 5 DÍAS HÁBILES, EN CONSECUENCIA DE LOS PLAZOS DE ENTREGA DE COMPONENTES ESPECIALES DE PROVEEDORES NACIONALES E INTERNACIONALES.",
     "LOS MOLINOS A MARTILLO REQUIEREN CONTAR CON UNA INSTALACIÓN ELÉCTRICA PREVIA DE 16 AMPERES, O UN AUTOMÁTICO CON GUARDAMOTOR DE 10 AMPERES EXCLUSIVO PARA EL EQUIPO.",
   ];
-  let ly = 604;
+  let ly = legalY + 11;
   for (const paragraph of legalParagraphs) {
-    const wrapped = doc.splitTextToSize(paragraph, 470) as string[];
+    const wrapped = doc.splitTextToSize(paragraph, 480) as string[];
     for (const line of wrapped) {
-      if (ly > 635) break;
+      if (ly > legalY + 42) break;
       doc.text(line, 299, ly, { align: "center" });
-      ly += 9.6;
+      ly += 9.2;
     }
   }
 
-  // ── 9. Importante ──
-  box(doc, 35.8, 651.9, 526.7, 25.8, GRAY_LIGHT);
+  let impBoxY = legalY + 46 + 6;
+  box(doc, 35.8, impBoxY, 526.7, 24, GRAY_LIGHT);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.4);
-  doc.text("IMPORTANTE: ", 42, 665);
+  doc.setFontSize(7.2);
+  doc.text("IMPORTANTE: ", 42, impBoxY + 12);
   const importanteText =
     "PARA HACER EFECTIVA LA GARANTÍA DE NUESTRAS MÁQUINAS, ES REQUISITO INDISPENSABLE QUE EL EQUIPO SEA TRASLADADO A NUESTRA FÁBRICA.";
   doc.setFont("helvetica", "normal");
-  const importanteWrapped = doc.splitTextToSize(importanteText, 440) as string[];
-  let impY = 665;
+  const importanteWrapped = doc.splitTextToSize(importanteText, 430) as string[];
+  let impY = impBoxY + 12;
   for (const line of importanteWrapped) {
     doc.text(line, 42 + doc.getTextWidth("IMPORTANTE: "), impY);
-    impY += 9.6;
+    impY += 9.2;
   }
 
-  // ── 10. Datos de empresa / cuenta bancaria ──
-  box(doc, 35.8, 690.3, 265.8, 66.2, GRAY_LIGHT);
-  const leftCompanyLines: Array<[string, boolean]> = [
-    ["DATOS EMPRESA:", true],
-    [OT_COMPANY.name, false],
-    [`RUT: ${OT_COMPANY.taxId}`, false],
-    [`GIRO: ${OT_COMPANY.giro}`, false],
-    ["DIRECCIÓN PRINCIPAL (CASA MATRIZ)", false],
-    [OT_COMPANY.address, false],
+  let companyBoxY = impBoxY + 24 + 6;
+  box(doc, 35.8, companyBoxY, 265.8, 66.2, GRAY_LIGHT);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.4);
+  doc.setTextColor(...BLACK);
+  doc.text("DATOS EMPRESA:", 42, companyBoxY + 11);
+
+  const leftCompanyItems: Array<{ text: string; isBold?: boolean }> = [
+    { text: companyName, isBold: true },
+    { text: `RUT: ${companyTaxId}` },
+    { text: `GIRO: ${companyGiro}` },
+    { text: `CASA MATRIZ: ${companyAddress}` },
   ];
-  leftCompanyLines.forEach(([line, isBold], index) => {
-    doc.setFont("helvetica", isBold ? "bold" : "normal");
-    doc.setFontSize(7.4);
+
+  let curYLeft = companyBoxY + 21;
+  leftCompanyItems.forEach((item) => {
+    doc.setFont("helvetica", item.isBold ? "bold" : "normal");
+    doc.setFontSize(item.isBold ? 7.2 : 6.6);
     doc.setTextColor(...BLACK);
-    doc.text(String(line).slice(0, 44), 42, 701 + index * 10.5);
+    const wrapped: string[] = doc.splitTextToSize(item.text, 250);
+    wrapped.forEach((subLine) => {
+      if (curYLeft <= companyBoxY + 62) {
+        doc.text(subLine, 42, curYLeft);
+        curYLeft += 9.5;
+      }
+    });
   });
 
-  box(doc, 300.9, 690.3, 260.9, 66.2, GRAY_LIGHT);
-  const rightCompanyLines: Array<[string, boolean]> = [
-    ["CUENTA BANCARIA:", true],
-    [OT_COMPANY.bankName, false],
-    [`RUT ${OT_COMPANY.taxId}`, false],
-    [OT_COMPANY.name, false],
-    [OT_COMPANY.bankAccount, false],
-    [OT_COMPANY.email, false],
+  box(doc, 300.9, companyBoxY, 260.9, 66.2, GRAY_LIGHT);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.4);
+  doc.setTextColor(...BLACK);
+  doc.text("CUENTA BANCARIA:", 308, companyBoxY + 11);
+
+  const rightCompanyItems: Array<{ text: string; isBold?: boolean }> = [
+    { text: companyName, isBold: true },
+    { text: `RUT: ${companyTaxId}` },
+    { text: companyBank },
+    { text: companyAccount },
+    { text: companyEmail },
   ];
-  rightCompanyLines.forEach(([line, isBold], index) => {
-    doc.setFont("helvetica", isBold ? "bold" : "normal");
-    doc.setFontSize(7.4);
+
+  let curYRight = companyBoxY + 21;
+  rightCompanyItems.forEach((item) => {
+    doc.setFont("helvetica", item.isBold ? "bold" : "normal");
+    doc.setFontSize(item.isBold ? 7.2 : 6.6);
     doc.setTextColor(...BLACK);
-    doc.text(String(line).slice(0, 42), 308, 701 + index * 10.5);
+    const wrapped: string[] = doc.splitTextToSize(item.text, 245);
+    wrapped.forEach((subLine) => {
+      if (curYRight <= companyBoxY + 62) {
+        doc.text(subLine, 308, curYRight);
+        curYRight += 9.5;
+      }
+    });
   });
 
-  // ── 11. Eslogan ──
+  let bottomY = companyBoxY + 66.2 + 8;
   doc.setFont("times", "bold");
   doc.setFontSize(8.4);
   doc.setTextColor(...BLACK);
-  doc.text("15 AÑOS DE EXPERIENCIA, MÁXIMA CALIDAD", 306, 775, { align: "center" });
+  doc.text("15 AÑOS DE EXPERIENCIA, MÁXIMA CALIDAD", 306, bottomY, { align: "center" });
 
-  // ── 12. Observaciones de entrega ──
+  bottomY += 8;
   doc.setFont("helvetica", "bolditalic");
   doc.setFontSize(8.4);
-  doc.text("Observaciones de entrega y compromisos:", 37.9, 779);
-  box(doc, 36.5, 781.6, 525.3, 60);
+  doc.text("Observaciones de entrega y compromisos:", 37.9, bottomY);
+  bottomY += 3;
+  box(doc, 36.5, bottomY, 525.3, 50);
 
-  // ── 13. Firma ──
-  box(doc, 17.7, 842.3, 555.2, 44);
+  let firmaY = bottomY + 54;
+  box(doc, 17.7, firmaY, 555.2, 40);
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.6);
-  doc.line(167.9, 870.6, 423.2, 870.6);
+  doc.line(167.9, firmaY + 24, 423.2, firmaY + 24);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.4);
-  doc.text("FIRMA CLIENTE. RECIBÍ CONFORME EL EQUIPO Y CAPACITACIÓN", 306, 885, {
+  doc.text("FIRMA CLIENTE. RECIBÍ CONFORME EL EQUIPO Y CAPACITACIÓN", 306, firmaY + 34, {
     align: "center",
   });
 
-  // ── 14. Banda inferior ──
-  box(doc, 17.7, 887.0, 555.2, 12.5);
+  box(doc, 17.7, firmaY + 42, 555.2, 12.5);
 
   const blob = doc.output("blob");
   const fileName = `OT-${text(item.id, "sin-numero")}.pdf`;

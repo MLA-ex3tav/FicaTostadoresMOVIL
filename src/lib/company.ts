@@ -17,17 +17,17 @@ export interface CompanyData {
 const STORAGE_KEY = "fica.company.data";
 
 export const DEFAULT_FICA: CompanyData = {
-  name: "TOSTADORES FICA LTDA",
+  name: "EMPRESAS FICA LTDA",
   taxId: "76.683.592-9",
-  address: "San Ramón Pc. 39 Lt. 12-19",
-  city: "Padre Las Casas",
-  region: "La Araucanía",
-  country: "Chile",
+  address: "SAN RAMON PS39 LTD12-18",
+  city: "PADRE LAS CASAS",
+  region: "REGION DE LA ARAUCANIA",
+  country: "CHILE",
   zip: "4780000",
   phone: "+56 9 9002 0089",
   email: "administracion@tostadoresfica.cl",
   website: "www.tostadoresfica.cl",
-  giro: "REPARACIÓN Y MANTENCIÓN DE MAQ.",
+  giro: "FABRICA DE MAQUINARIA PARA FRUTOS SECOS",
   bankName: "BANCO SCOTIABANK",
   bankAccount: "CUENTA CORRIENTE 979706529",
 };

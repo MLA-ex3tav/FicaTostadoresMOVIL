@@ -115,9 +115,9 @@ export async function abrirGmail(pdf: CotizacionPdf): Promise<void> {
   const result = await sharePdfNative(pdf, baseText(pdf), "Enviar por correo");
 
   if (result === "unsupported" && !Capacitor.isNativePlatform()) {
-    const subject = encodeURIComponent(`Cotización ${pdf.fileName} · Tostadores Fica`);
+    const subject = encodeURIComponent(`Cotización ${pdf.fileName} · Empresas Fica`);
     const body = encodeURIComponent(
-      `Adjunto la cotización ${pdf.fileName}.\n\nTostadores Fica Ltda.\nSan Ramón Pc. 39 Lt. 12-19, Padre Las Casas, Chile\nwww.tostadoresfica.cl`,
+      `Adjunto la cotización ${pdf.fileName}.\n\nEmpresas Fica Ltda.\nSAN RAMON PS39 LTD12-18 PADRE LAS CASAS REGION DE LA ARAUCANIA, CHILE\nwww.tostadoresfica.cl`,
     );
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   }

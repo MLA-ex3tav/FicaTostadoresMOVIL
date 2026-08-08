@@ -1,7 +1,10 @@
 import {
+  actualizarCotizacionSolicitud,
   actualizarEstadoSolicitud,
+  crearSolicitudCotizacion,
   eliminarSolicitud,
   fetchSolicitudes,
+  type RegistroOrdenTrabajoPayload,
   type SolicitudRemota,
 } from "../lib/web-api";
 import { notifyNewSolicitudes } from "./notifications";
@@ -128,15 +131,83 @@ async function sincronizarEstadosPendientes(): Promise<void> {
   }
 }
 
-/** Guarda una edición local de una solicitud y notifica a la UI. */
+/** Envía una edición de cotización directamente a Firebase para sincronizar con App v2 y la Web. */
+export async function enviarEdicionAFirebase(solicitud: SolicitudRemota): Promise<boolean> {
+  try {
+    const rawProducts = Array.isArray(solicitud.products) ? solicitud.products : [];
+    const payload: Omit<RegistroOrdenTrabajoPayload, "id"> = {
+      clientName: String(solicitud.clientName ?? ""),
+      clientPhone: String(solicitud.clientPhone ?? ""),
+      clientRut: String(solicitud.clientRut ?? ""),
+      clientEmail: String(solicitud.clientEmail ?? ""),
+      clientComuna: String(solicitud.clientComuna ?? ""),
+      clientAddress: String(solicitud.clientAddress ?? ""),
+      message: String(solicitud.message ?? ""),
+      estado: String(solicitud.estado ?? "pendiente"),
+      enOT: Boolean(solicitud.enOT),
+      products: rawProducts.map((p: unknown) => {
+        const rec = p && typeof p === "object" ? (p as Record<string, unknown>) : {};
+        return {
+          productId: String(rec.productId ?? rec.id ?? ""),
+          name: String(rec.name ?? ""),
+          quantity: Math.max(1, Number(rec.quantity ?? rec.cantidad ?? 1)),
+          unitPrice: Math.max(0, Number(rec.unitPrice ?? rec.price ?? rec.precio ?? 0)),
+        };
+      }),
+    };
+
+    const res = await actualizarCotizacionSolicitud(solicitud.id, payload);
+
+    if (!res.ok && res.status === 404) {
+      // La cotización ya no existe en el servidor: la recreamos para no perder la edición.
+      const recreated = await crearSolicitudCotizacion({
+        ...payload,
+        id: String(solicitud.id ?? ""),
+        estado: "pendiente",
+        enOT: false,
+      });
+
+      if (!recreated.ok) {
+        return false;
+      }
+    } else if (!res.ok) {
+      return false;
+    }
+
+    delete localOverrides[solicitud.id];
+    // Si existía como borrador local, limpiamos el borrador para no duplicarlo en pantalla
+    localCotizaciones = localCotizaciones.filter(
+      (entry) => entry.localId !== solicitud.id && entry.solicitud.id !== solicitud.id,
+    );
+    persistLocalCotizaciones();
+    void refreshSolicitudes();
+    return true;
+  } catch (error) {
+    console.error("[solicitudes:enviarEdicionAFirebase]", error);
+    return false;
+  }
+}
+
+/** Guarda una edición de una solicitud, la envía a Firebase y notifica a la UI. */
 export function guardarEdicionLocal(id: string, patch: Partial<SolicitudRemota>): void {
   localOverrides[id] = { ...(localOverrides[id] ?? {}), ...patch };
 
-  const index = state.cotizaciones.findIndex((item) => item.id === id);
-  if (index >= 0) {
-    state.cotizaciones[index] = { ...state.cotizaciones[index], ...localOverrides[id] };
+  const localEntry = localCotizaciones.find((entry) => entry.localId === id || entry.solicitud.id === id);
+  if (localEntry) {
+    localEntry.solicitud = { ...localEntry.solicitud, ...patch };
+    persistLocalCotizaciones();
   }
 
+  const index = state.cotizaciones.findIndex((item) => item.id === id);
+  if (index >= 0) {
+    const updated = { ...state.cotizaciones[index], ...localOverrides[id] };
+    state.cotizaciones[index] = updated;
+
+    // Sincronizar automáticamente la edición con Firebase
+    void enviarEdicionAFirebase(updated);
+  }
+
+  rebuildCotizaciones();
   emit();
 }
 
@@ -160,6 +231,7 @@ interface LocalCotizacion {
   /** id generado en la app (p.ej. COT-123456). */
   localId: string;
   solicitud: SolicitudRemota;
+  payload?: RegistroOrdenTrabajoPayload;
 }
 
 let localCotizaciones: LocalCotizacion[] = loadLocalCotizaciones();
@@ -193,26 +265,98 @@ function persistLocalCotizaciones(): void {
   }
 }
 
-/** Reconstruye la lista visible: las cotizaciones locales primero, luego las remotas. */
+/** Reconstruye la lista visible: las cotizaciones locales sin duplicados en el servidor. */
 function rebuildCotizaciones(): void {
+  const remoteIds = new Set(serverCotizaciones.map((item) => item.id));
+  const filteredLocals = localCotizaciones.filter(
+    (entry) => !remoteIds.has(entry.localId) && !remoteIds.has(entry.solicitud.id),
+  );
+
+  if (filteredLocals.length !== localCotizaciones.length) {
+    localCotizaciones = filteredLocals;
+    persistLocalCotizaciones();
+  }
+
   state.cotizaciones = [
     ...localCotizaciones.map((entry) => entry.solicitud),
     ...applyOverrides(serverCotizaciones),
   ];
-  state.pendientesSincronizar = 0;
+  state.pendientesSincronizar = localCotizaciones.length;
 }
 
 /** Registra una cotización creada localmente para que aparezca al instante en la lista. */
-export function agregarCotizacionLocal(item: SolicitudRemota): void {
+export function agregarCotizacionLocal(
+  item: SolicitudRemota,
+  payload?: RegistroOrdenTrabajoPayload,
+): void {
   const existing = localCotizaciones.find((entry) => entry.localId === item.id);
   if (existing) {
     existing.solicitud = item;
+    if (payload) existing.payload = payload;
   } else {
-    localCotizaciones.push({ localId: item.id, solicitud: item });
+    localCotizaciones.push({ localId: item.id, solicitud: item, payload });
   }
   persistLocalCotizaciones();
   rebuildCotizaciones();
   emit();
+}
+
+/**
+ * Envía una cotización directamente a Firebase vía la API protegida.
+ * Si la red falla o está offline, se guarda localmente como pendiente de sincronización.
+ */
+export async function enviarCotizacionAFirebase(
+  solicitudLocal: SolicitudRemota,
+  payload: RegistroOrdenTrabajoPayload,
+): Promise<{ ok: boolean; id?: string; offline?: boolean; error?: string }> {
+  try {
+    const res = await crearSolicitudCotizacion({
+      ...payload,
+      id: solicitudLocal.id,
+      estado: "pendiente",
+      enOT: false,
+    });
+
+    if (res.ok && res.data?.id) {
+      borrarCotizacionDeLista(solicitudLocal.id);
+      void refreshSolicitudes();
+      return { ok: true, id: res.data.id, offline: false };
+    }
+  } catch (err) {
+    console.warn("Sin conexión directa a Firebase, guardando copia local pendiente:", err);
+  }
+
+  agregarCotizacionLocal(solicitudLocal, payload);
+  return { ok: true, id: solicitudLocal.id, offline: true };
+}
+
+let syncInFlight = false;
+
+export async function sincronizarCotizacionesPendientes(): Promise<void> {
+  if (syncInFlight || localCotizaciones.length === 0) return;
+
+  syncInFlight = true;
+  try {
+    const pendingList = [...localCotizaciones];
+    for (const entry of pendingList) {
+      if (entry.payload) {
+        const res = await crearSolicitudCotizacion({
+          ...entry.payload,
+          id: entry.localId,
+          estado: "pendiente",
+          enOT: false,
+        });
+
+        if (res.ok) {
+          borrarCotizacionDeLista(entry.localId);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error al sincronizar cotizaciones pendientes a Firebase:", error);
+  } finally {
+    syncInFlight = false;
+  }
 }
 
 /** Busca la copia local asociada a un id (localId). */
@@ -332,6 +476,8 @@ export async function refreshSolicitudes(): Promise<void> {
       state.loading = true;
       emit();
     }
+
+    void sincronizarCotizacionesPendientes();
 
     const [cotizaciones, soporte] = await Promise.all([
       fetchSolicitudes("cotizaciones"),
