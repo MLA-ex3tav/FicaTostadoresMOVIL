@@ -3966,7 +3966,7 @@ select.form-input:disabled {
 }
 
 
-/* -- Bloqueo por PIN / biometría --------------------------------------- */
+/* -- Bloqueo por PIN / biometrÃ­a --------------------------------------- */
 .lock-screen {
   position: fixed;
   inset: 0;
@@ -4091,7 +4091,7 @@ select.form-input:disabled {
   padding: 6px 10px;
 }
 
-/* Sección Seguridad en pantalla Empresa */
+/* SecciÃ³n Seguridad en pantalla Empresa */
 .form-section__title {
   display: flex;
   align-items: center;
