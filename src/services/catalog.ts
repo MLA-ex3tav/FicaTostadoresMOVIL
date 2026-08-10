@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { getDb } from "../lib/firebase";
 import { getConfig } from "../lib/config";
+import { reportFailure } from "../lib/network";
 
 export interface ProductoCatalogo {
   id: string;
@@ -191,6 +192,11 @@ export async function syncAllPreciosToServer(): Promise<SyncResult> {
   return { ok: failed.length === 0, total: ids.length, failed };
 }
 
+/** Nº de precios editados sin conexión que aún esperan sincronizarse. */
+export function getPreciosPendientesCount(): number {
+  return Object.keys(readLocalPrices()).length;
+}
+
 export function findProducto(productId: unknown, name: unknown): ProductoCatalogo | null {
   const id = typeof productId === "string" ? productId : "";
   const productName = typeof name === "string" ? name.trim().toLowerCase() : "";
@@ -231,6 +237,9 @@ export function startCatalogoLive(): () => void {
     },
     (error) => {
       console.warn("[catalog] No se pudo suscribir al catálogo en tiempo real", error);
+      if (!navigator.onLine) {
+        reportFailure();
+      }
     },
   );
 

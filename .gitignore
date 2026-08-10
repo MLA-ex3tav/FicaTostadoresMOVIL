@@ -9,4 +9,5 @@ ios
 .env.*.local
 .env.production
 *.apk
+*.aab
 .DS_Store

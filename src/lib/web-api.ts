@@ -1,4 +1,4 @@
-import { getConfig } from "./config";
+import { getConfig, getInstanceId } from "./config";
 
 export interface ApiResult<T> {
   ok: boolean;
@@ -116,6 +116,79 @@ export async function sendHeartbeat(
 }
 
 export type SolicitudesTipo = "cotizaciones" | "soporte";
+
+/** Registra el token de notificaciones push (FCM) del dispositivo en la web. */
+export async function enviarTokenFCM(
+  token: string,
+  platform: string,
+): Promise<ApiResult<{ ok: boolean }>> {
+  const { webUrl } = getConfig();
+
+  if (!webUrl) {
+    return fail(null, 0, "VITE_WEB_API_URL no definida en .env");
+  }
+
+  const started = performance.now();
+
+  try {
+    const res = await fetch(`${webUrl}/api/electron/fcm-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ token, platform, deviceId: getInstanceId() }),
+    });
+    const latencyMs = Math.round(performance.now() - started);
+
+    if (res.ok) {
+      const data = (await res.json()) as { ok: boolean };
+      return ok(res.status, latencyMs, data);
+    }
+
+    const apiError = await readApiError(res);
+    return fail(res.status, latencyMs, apiError ?? `HTTP ${res.status}`);
+  } catch (error) {
+    return fail(
+      null,
+      Math.round(performance.now() - started),
+      `Sin respuesta (${errorMessage(error)})`,
+    );
+  }
+}
+
+/** Da de baja el token FCM de este dispositivo en la web. */
+export async function eliminarTokenFCM(): Promise<ApiResult<{ ok: boolean }>> {
+  const { webUrl } = getConfig();
+
+  if (!webUrl) {
+    return fail(null, 0, "VITE_WEB_API_URL no definida en .env");
+  }
+
+  const started = performance.now();
+
+  try {
+    const res = await fetch(
+      `${webUrl}/api/electron/fcm-token?deviceId=${encodeURIComponent(getInstanceId())}`,
+      {
+        method: "DELETE",
+        headers: { ...authHeaders() },
+      },
+    );
+    const latencyMs = Math.round(performance.now() - started);
+
+    if (res.ok) {
+      const data = (await res.json()) as { ok: boolean };
+      return ok(res.status, latencyMs, data);
+    }
+
+    const apiError = await readApiError(res);
+    return fail(res.status, latencyMs, apiError ?? `HTTP ${res.status}`);
+  } catch (error) {
+    return fail(
+      null,
+      Math.round(performance.now() - started),
+      `Sin respuesta (${errorMessage(error)})`,
+    );
+  }
+}
 
 export interface SolicitudRemota {
   id: string;

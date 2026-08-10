@@ -1,3 +1,4 @@
+import { getNetworkState, reportFailure } from "../lib/network";
 import {
   actualizarCotizacionSolicitud,
   actualizarEstadoSolicitud,
@@ -359,6 +360,20 @@ export async function sincronizarCotizacionesPendientes(): Promise<void> {
   }
 }
 
+/**
+ * Reenvía todo lo pendiente (cotizaciones locales + estados de OT) en cuanto
+ * se recupera la conexión. Se invoca al reconectar (ver main.tsx).
+ */
+export async function syncPendientes(): Promise<void> {
+  await sincronizarCotizacionesPendientes();
+  await sincronizarEstadosPendientes();
+}
+
+/** Nº de operaciones locales que aún esperan confirmación del servidor. */
+export function getPendingSyncCount(): number {
+  return localCotizaciones.length + Object.keys(localEstados).length;
+}
+
 /** Busca la copia local asociada a un id (localId). */
 
 /** Busca la copia local asociada a un id (localId). */
@@ -477,12 +492,25 @@ export async function refreshSolicitudes(): Promise<void> {
       emit();
     }
 
+    // Sin red: no martillar la API; los cambios locales ya están persistidos
+    // y se sincronizarán cuando se recupere la conexión.
+    if (getNetworkState() === "offline") {
+      state.error = "Sin conexión. Los datos se actualizarán al reconectar.";
+      state.loading = false;
+      emit();
+      return;
+    }
+
     void sincronizarCotizacionesPendientes();
 
     const [cotizaciones, soporte] = await Promise.all([
       fetchSolicitudes("cotizaciones"),
       fetchSolicitudes("soporte"),
     ]);
+
+    if (cotizaciones.status === null || soporte.status === null) {
+      reportFailure();
+    }
 
     if (cotizaciones.ok && cotizaciones.data) {
       serverCotizaciones = cotizaciones.data.solicitudes.map(normalizarSolicitud);

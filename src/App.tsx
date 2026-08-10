@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ViewId } from "./types";
 import { BottomNav } from "./components/BottomNav";
+import { ConnectionBanner } from "./components/ConnectionBanner";
+import { LockScreen } from "./components/LockScreen";
 import { ToastHost } from "./components/ToastHost";
+import { isLockEnabled } from "./lib/lock";
 import { PdfActionsSheet } from "./components/PdfActionsSheet";
 import { CotizacionesScreen } from "./screens/CotizacionesScreen";
 import { NuevaCotizacionScreen } from "./screens/NuevaCotizacionScreen";
@@ -43,6 +46,7 @@ function renderScreen(view: ViewId, setView: (view: ViewId) => void): React.JSX.
 
 export function App() {
   const [view, setView] = useState<ViewId>("cotizaciones");
+  const [locked, setLocked] = useState<boolean>(() => isLockEnabled());
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -55,8 +59,39 @@ export function App() {
     return () => window.removeEventListener("app:navigate", handler);
   }, []);
 
+  // Bloqueo por PIN/biometría: al arrancar (si está activo) y al pasar la app
+  // a segundo plano se vuelve a bloquear.
+  useEffect(() => {
+    if (!isLockEnabled()) return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        setLocked(true);
+      }
+    };
+    const onLockEvent = () => setLocked(true);
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("app:lock", onLockEvent);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("app:lock", onLockEvent);
+    };
+  }, []);
+
+  if (locked) {
+    return (
+      <LockScreen
+        onUnlock={() => {
+          setLocked(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
+      <ConnectionBanner />
       <main className="content">
         <PullToRefresh onRefresh={refreshSolicitudes}>
           <div key={view} className="view-transition">

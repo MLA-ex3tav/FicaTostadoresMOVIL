@@ -3935,3 +3935,182 @@ select.form-input:disabled {
   color: var(--primary);
   flex: 0 0 auto;
 }
+
+
+/* -- Sistema de seguridad: banner de conectividad ---------------------- */
+.conn-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.conn-banner--offline {
+  background: #dc2626;
+  color: #fff;
+}
+
+.conn-banner--pending {
+  background: var(--primary, #e85d04);
+  color: #fff;
+}
+
+
+/* -- Bloqueo por PIN / biometría --------------------------------------- */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.lock-screen__card {
+  width: 100%;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  padding: 28px 22px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.lock-screen__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+
+.lock-screen__title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.lock-screen__subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 18px;
+}
+
+.lock-screen__dots {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 10px;
+  min-height: 14px;
+}
+
+.lock-screen__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.lock-screen__dot.is-filled {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.lock-screen__dots--error .lock-screen__dot.is-filled {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.lock-screen__error {
+  font-size: 12.5px;
+  color: var(--danger);
+  margin: 0 0 10px;
+  min-height: 16px;
+}
+
+.lock-screen__keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.lock-screen__key {
+  height: 60px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lock-screen__key:active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.lock-screen__key:disabled {
+  opacity: 0.4;
+}
+
+.lock-screen__key--action {
+  background: transparent;
+  border-color: transparent;
+}
+
+.lock-screen__biometric-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+/* Sección Seguridad en pantalla Empresa */
+.form-section__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.4px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.seguridad-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.seguridad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

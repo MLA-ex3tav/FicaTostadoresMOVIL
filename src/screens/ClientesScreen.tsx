@@ -10,11 +10,33 @@ import { EmptyState } from "../components/EmptyState";
 import { formatFecha } from "./shared";
 
 interface ClienteInfo {
+  key: string;
   name: string;
   phone: string;
   email: string;
   total: number;
   ultimaFecha: Date | null;
+}
+
+/** Normaliza un teléfono: conserva dígitos y el "+" inicial. */
+function normalizePhone(phone: unknown): string {
+  const raw = typeof phone === "string" ? phone.trim() : "";
+  return raw.replace(/[^0-9+]/g, "");
+}
+
+/**
+ * Clave de identidad del cliente. Prioriza teléfono, luego e-mail, y solo usa
+ * el nombre como último recurso (cuando no hay dato de contacto).
+ */
+function clienteKey(item: { [key: string]: unknown }): string {
+  const phone = normalizePhone(item.clientPhone);
+  if (phone) return `tel:${phone}`;
+  const email =
+    typeof item.clientEmail === "string" ? item.clientEmail.trim().toLowerCase() : "";
+  if (email) return `email:${email}`;
+  const name =
+    typeof item.clientName === "string" ? item.clientName.trim().toLowerCase() : "";
+  return `nom:${name}`;
 }
 
 function buildClientes(state: SolicitudesState): ClienteInfo[] {
@@ -26,7 +48,7 @@ function buildClientes(state: SolicitudesState): ClienteInfo[] {
     const name = (typeof item.clientName === "string" ? item.clientName : "").trim();
     if (!name) continue;
 
-    const key = name.toLowerCase();
+    const key = clienteKey(item);
     const existing = map.get(key);
     const fecha = getSolicitudDate(item);
 
@@ -37,6 +59,7 @@ function buildClientes(state: SolicitudesState): ClienteInfo[] {
       }
     } else {
       map.set(key, {
+        key,
         name,
         phone: typeof item.clientPhone === "string" ? item.clientPhone : "",
         email: typeof item.clientEmail === "string" ? item.clientEmail : "",
@@ -105,7 +128,7 @@ export function ClientesScreen() {
         ) : (
           <ul className="card-list">
             {clientes.map((cliente) => (
-              <li key={cliente.name} className="card-list__item">
+              <li key={cliente.key} className="card-list__item">
                 <div className="card-list__top">
                   <div className="card-list__title">{cliente.name}</div>
                   <StatusPill

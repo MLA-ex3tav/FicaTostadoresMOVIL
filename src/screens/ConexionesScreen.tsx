@@ -7,6 +7,7 @@ import {
   type CheckStatus,
   type ConnectionCheck,
 } from "../lib/connections";
+import { getNetworkState, onNetworkChange } from "../lib/network";
 import { StatusPill, type PillVariant } from "../components/StatusPill";
 import { renderIcon } from "../ui/icons";
 
@@ -55,6 +56,30 @@ export function ConexionesScreen() {
 
   useEffect(() => {
     void run();
+  }, []);
+
+  // Mantiene vivo el estado de la red local en la lista de comprobaciones.
+  useEffect(() => {
+    const applyRed = () => {
+      setChecks((prev) => {
+        const index = prev.findIndex((check) => check.id === "red");
+        if (index < 0) return prev;
+        const red = getNetworkState();
+        const next = [...prev];
+        next[index] = {
+          ...next[index],
+          status: red === "online" ? "ok" : red === "degraded" ? "warn" : "error",
+          detail:
+            red === "online"
+              ? "Conectado a la red"
+              : red === "degraded"
+                ? "Red disponible, servicio web con problemas"
+                : "Sin conexión de red",
+        };
+        return next;
+      });
+    };
+    return onNetworkChange(applyRed);
   }, []);
 
   const overall = summarizeChecks(checks);
