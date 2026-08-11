@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Hash, MapPin, Mail, Package, Phone, User, X } from "lucide-react";
+import { ChevronRight, Hash, MapPin, Mail, Package, Phone, User, X } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import { getSolicitudDate } from "../services/solicitudes";
 import { StatusPill } from "./StatusPill";
@@ -11,9 +12,11 @@ import {
   OT_ESTADO_LABELS,
   OT_ESTADO_VARIANT,
 } from "../screens/shared";
-import { getProductColorById } from "../lib/product-colors";
+import { getProductColorById, getProductColorLabel } from "../lib/product-colors";
 import { ProductColorSwatches } from "./ProductColorSwatches";
 import { coloresProductos } from "../screens/shared";
+import { useSheetDrag } from "./useSheetDrag";
+import { MaquinasSheet, type MaquinaItem } from "./MaquinasSheet";
 
 interface DetalleSolicitudSheetProps {
   item: SolicitudRemota;
@@ -54,7 +57,10 @@ function parseProductos(item: SolicitudRemota): DetalleProducto[] {
         quantity,
         unitPrice,
         colorId: String(record.selectedColorId ?? ""),
-        color: String(record.selectedColor ?? ""),
+        color:
+          String(record.selectedColor ?? "") ||
+          getProductColorLabel(String(record.selectedColorId ?? "")) ||
+          "",
       } satisfies DetalleProducto;
     });
 }
@@ -76,6 +82,16 @@ export function DetalleSolicitudSheet({
   const comuna = String(item.clientComuna ?? "");
   const address = String(item.clientAddress ?? "");
   const message = String(item.message ?? "");
+  const { panelRef, requestClose } = useSheetDrag(onClose);
+  const [maquinasOpen, setMaquinasOpen] = useState(false);
+
+  const maquinasItems: MaquinaItem[] = productos.map((producto) => ({
+    name: producto.name,
+    quantity: producto.quantity,
+    unitPrice: producto.unitPrice,
+    colorId: producto.colorId,
+    color: producto.color,
+  }));
 
   const camposCliente = [
     { icon: Phone, label: "Teléfono", value: phone },
@@ -87,8 +103,8 @@ export function DetalleSolicitudSheet({
 
   return createPortal(
     <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Detalles">
-      <div className="more-sheet__backdrop" onClick={onClose} />
-      <div className="more-sheet__panel">
+      <div className="more-sheet__backdrop" onClick={requestClose} />
+      <div ref={panelRef} className="more-sheet__panel">
         <header className="more-sheet__header">
           <div className="cotizacion-sheet__info">
             <span className="cotizacion-sheet__name">{clientName}</span>
@@ -107,7 +123,7 @@ export function DetalleSolicitudSheet({
               <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
             )}
           </div>
-          <button type="button" className="more-sheet__close" aria-label="Cerrar" onClick={onClose}>
+          <button type="button" className="more-sheet__close" aria-label="Cerrar" onClick={requestClose}>
             <X size={18} />
           </button>
         </header>
@@ -138,38 +154,60 @@ export function DetalleSolicitudSheet({
             <h4 className="detalle-sheet__section-title">
               <Package size={16} /> Máquinas seleccionadas
             </h4>
-            {productos.length > 0 ? (
-              <ul className="detalle-sheet__products">
-                {productos.map((producto, index) => (
-                  <li className="detalle-sheet__product" key={`${producto.name}-${index}`}>
-                    <div className="detalle-sheet__product-head">
-                      <span className="detalle-sheet__product-name">
-                        {producto.name}
-                        {producto.colorId || producto.color ? (
-                          <span
-                            className="detalle-sheet__product-dot"
-                            title={producto.color ?? "Color"}
-                            style={{
-                              backgroundColor:
-                                getProductColorById(producto.colorId)?.hex ?? undefined,
-                            }}
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                      </span>
-                      <span className="detalle-sheet__product-qty">×{producto.quantity}</span>
-                    </div>
-                    <div className="detalle-sheet__product-meta">
-                      <span>{formatPrecio(producto.unitPrice)}</span>
-                      <span className="detalle-sheet__product-sub">
-                        {formatPrecio(producto.unitPrice * producto.quantity)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
+            {productos.length === 0 ? (
               <p className="detalle-sheet__empty">Sin productos seleccionados.</p>
+            ) : productos.length === 1 ? (
+              <div className="maquina-list">
+                <div className="maquina-card">
+                  <div className="maquina-card__head">
+                    <span className="maquina-card__name">{productos[0].name}</span>
+                    <span className="maquina-card__qty">×{productos[0].quantity}</span>
+                  </div>
+                  <div className="maquina-card__meta">
+                    {productos[0].color || getProductColorLabel(productos[0].colorId) ? (
+                      <span className="maquina-card__color">
+                        <span
+                          className="maquina-card__dot"
+                          style={{
+                            backgroundColor:
+                              getProductColorById(productos[0].colorId)?.hex ?? undefined,
+                          }}
+                          aria-hidden="true"
+                        />
+                        {productos[0].color || getProductColorLabel(productos[0].colorId)}
+                      </span>
+                    ) : null}
+                    <strong className="maquina-card__subtotal">
+                      {formatPrecio(productos[0].unitPrice * productos[0].quantity)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="wizard-machines"
+                  onClick={() => setMaquinasOpen(true)}
+                >
+                  <span className="wizard-machines__info">
+                    <span className="wizard-machines__title">Ver máquinas seleccionadas</span>
+                    <span className="wizard-machines__sub">
+                      {productos.length} máquina{productos.length === 1 ? "" : "s"} ·{" "}
+                      {productos.reduce((sum, producto) => sum + producto.quantity, 0)} producto
+                      {productos.reduce((sum, producto) => sum + producto.quantity, 0) === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                {maquinasOpen ? (
+                  <MaquinasSheet
+                    items={maquinasItems}
+                    total={total}
+                    onClose={() => setMaquinasOpen(false)}
+                  />
+                ) : null}
+              </>
             )}
           </section>
 

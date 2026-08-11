@@ -7,5 +7,6 @@ export type ViewId =
   | "productos"
   | "soporte"
   | "conexiones"
+  | "seguridad"
   | "empresa"
   | "actualizaciones";

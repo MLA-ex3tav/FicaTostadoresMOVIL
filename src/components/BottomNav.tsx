@@ -3,6 +3,7 @@ import {
   ClipboardList,
   FileText,
   History,
+  Lock,
   Menu,
   MoreHorizontal,
   Plus,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import type { ViewId } from "../types";
 import { subscribeNavBadges } from "../lib/badges";
+import { useSheetDrag } from "./useSheetDrag";
 
 const LEFT_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> = [
   { id: "cotizaciones", label: "Cotizaciones", icon: FileText },
@@ -32,6 +34,7 @@ const MORE_ITEMS: Array<{ id: ViewId; label: string; icon: typeof FileText }> = 
   { id: "productos", label: "Productos", icon: Box },
   { id: "empresa", label: "Datos de la empresa", icon: Building2 },
   { id: "conexiones", label: "Conexiones", icon: Plug },
+  { id: "seguridad", label: "Seguridad", icon: Lock },
   { id: "actualizaciones", label: "Actualizaciones", icon: RefreshCw },
 ];
 
@@ -49,6 +52,7 @@ function useBadges(): Partial<Record<ViewId, number>> {
 export function BottomNav({ active, onChange }: BottomNavProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const badges = useBadges();
+  const { panelRef, requestClose } = useSheetDrag(() => setSheetOpen(false));
 
   const highlight = active === "nueva" ? "cotizaciones" : active;
   const primaryActive = [...LEFT_ITEMS, ...RIGHT_ITEMS].some(
@@ -57,7 +61,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
 
   const select = (view: ViewId) => {
     onChange(view);
-    setSheetOpen(false);
+    requestClose();
   };
 
   const renderItem = (item: (typeof LEFT_ITEMS)[number]) => {
@@ -71,7 +75,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
         onClick={() => select(item.id)}
       >
         <span className="bottom-nav__icon" aria-hidden="true">
-          <Icon size={20} />
+          <Icon size={22} />
           {badge ? <span className="bottom-nav__badge">{badge > 99 ? "99+" : badge}</span> : null}
         </span>
         <span className="bottom-nav__label">{item.label}</span>
@@ -89,7 +93,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
           aria-label="Nueva cotización"
           onClick={() => select("nueva")}
         >
-          <Plus size={26} strokeWidth={2.5} />
+          <Plus size={20} strokeWidth={2.75} />
         </button>
         <div className="bottom-nav__group">
           {RIGHT_ITEMS.map(renderItem)}
@@ -100,7 +104,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
             onClick={() => setSheetOpen((open) => !open)}
           >
             <span className="bottom-nav__icon" aria-hidden="true">
-              {sheetOpen ? <X size={20} /> : <MoreHorizontal size={20} />}
+              {sheetOpen ? <X size={22} /> : <MoreHorizontal size={22} />}
             </span>
             <span className="bottom-nav__label">Más</span>
           </button>
@@ -109,8 +113,8 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
 
       {sheetOpen ? (
         <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Más opciones">
-          <div className="more-sheet__backdrop" onClick={() => setSheetOpen(false)} />
-          <div className="more-sheet__panel">
+          <div className="more-sheet__backdrop" onClick={requestClose} />
+          <div ref={panelRef} className="more-sheet__panel">
             <header className="more-sheet__header">
               <span className="more-sheet__title">Más opciones</span>
               <span className="more-sheet__icon" aria-hidden="true">

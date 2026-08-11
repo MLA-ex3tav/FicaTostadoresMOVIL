@@ -205,7 +205,7 @@ export function CotizacionesScreen({ onCreate: _onCreate }: { onCreate?: () => v
                 ? `${state.error} · Revisa la sección Conexiones.`
                 : state.loading
                   ? "Consultando la web."
-                  : "Cuando llegue una solicitud desde la web aparecerá aquí automáticamente."
+                  : "Las nuevas cotizaciones aparecerán aquí automáticamente."
             }
           />
         ) : (

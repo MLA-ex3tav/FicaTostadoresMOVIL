@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, RefreshCw } from "lucide-react";
 
 const MAX = 56;
@@ -10,59 +10,79 @@ interface PullToRefreshProps {
 }
 
 export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const startY = useRef<number | null>(null);
   const pullRef = useRef(0);
   const busyRef = useRef(false);
   const [distance, setDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const inModal = (target: EventTarget | null): boolean =>
-    target instanceof Element && target.closest(".modal") !== null;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (busyRef.current || inModal(e.target)) return;
-    if (window.scrollY > 0) return;
-    startY.current = e.touches[0].clientY;
-  };
+    const inModal = (target: EventTarget | null): boolean =>
+      target instanceof Element && target.closest(".modal") !== null;
 
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (startY.current === null || busyRef.current || inModal(e.target)) return;
-    const delta = e.touches[0].clientY - startY.current;
-    if (delta <= 0) return;
-    const next = Math.min(delta * 0.45, MAX);
-    if (Math.abs(next - pullRef.current) < 1) return;
-    pullRef.current = next;
-    setDistance(next);
-  };
+    const handleTouchStart = (e: TouchEvent) => {
+      if (busyRef.current || inModal(e.target)) return;
+      if (window.scrollY > 0) return;
+      startY.current = e.touches[0].clientY;
+    };
 
-  const finish = () => {
-    if (startY.current === null) return;
-    startY.current = null;
-
-    if (pullRef.current >= THRESHOLD && !busyRef.current) {
-      busyRef.current = true;
-      setIsRefreshing(true);
-      setDistance(MAX);
-      void onRefresh().finally(() => {
-        busyRef.current = false;
-        setIsRefreshing(false);
+    const handleTouchMove = (e: TouchEvent) => {
+      if (startY.current === null || busyRef.current || inModal(e.target)) return;
+      if (window.scrollY > 0) {
+        startY.current = null;
         pullRef.current = 0;
         setDistance(0);
-      });
-    } else {
-      pullRef.current = 0;
-      setDistance(0);
-    }
-  };
+        return;
+      }
+      const delta = e.touches[0].clientY - startY.current;
+      if (delta <= 0) return;
+      // Bloquea el overscroll nativo del WebView para que el gesto quede bajo
+      // el control de la app (los listeners React son pasivos y no lo permiten).
+      e.preventDefault();
+      const next = Math.min(delta * 0.45, MAX);
+      if (Math.abs(next - pullRef.current) < 1) return;
+      pullRef.current = next;
+      setDistance(next);
+    };
+
+    const finish = () => {
+      if (startY.current === null) return;
+      startY.current = null;
+
+      if (pullRef.current >= THRESHOLD && !busyRef.current) {
+        busyRef.current = true;
+        setIsRefreshing(true);
+        setDistance(MAX);
+        void onRefresh().finally(() => {
+          busyRef.current = false;
+          setIsRefreshing(false);
+          pullRef.current = 0;
+          setDistance(0);
+        });
+      } else {
+        pullRef.current = 0;
+        setDistance(0);
+      }
+    };
+
+    root.addEventListener("touchstart", handleTouchStart, { passive: true });
+    root.addEventListener("touchmove", handleTouchMove, { passive: false });
+    root.addEventListener("touchend", finish);
+    root.addEventListener("touchcancel", finish);
+    return () => {
+      root.removeEventListener("touchstart", handleTouchStart);
+      root.removeEventListener("touchmove", handleTouchMove);
+      root.removeEventListener("touchend", finish);
+      root.removeEventListener("touchcancel", finish);
+    };
+  }, [onRefresh]);
 
   return (
-    <div
-      className="ptr"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={finish}
-      onTouchCancel={finish}
-    >
+    <div ref={rootRef} className="ptr">
       <div
         className="ptr__indicator"
         style={{ height: isRefreshing ? MAX : Math.min(distance, MAX) }}

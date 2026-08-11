@@ -76,6 +76,8 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* Impide que el WebView nativo robe el gesto de pull-to-refresh. */
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -192,6 +194,40 @@ body {
   max-width: 640px;
   width: 100%;
   margin: 0 auto;
+}
+
+.content--no-nav {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+.content--no-nav > .ptr,
+.content--no-nav > .ptr > .view-transition,
+.content--no-nav > .ptr > .view-transition > .screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wizard-step--fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wizard-step--fill > .form-section {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+
+.wizard-step--fill > .wizard-actions {
+  flex-shrink: 0;
 }
 
 .screen {
@@ -316,18 +352,14 @@ body {
 .steps {
   display: flex;
   align-items: flex-start;
-  gap: 0;
   margin-bottom: 8px;
 }
 
 .step-group {
-  display: flex;
-  align-items: flex-start;
+  position: relative;
   flex: 1;
-}
-
-.step-group:first-child {
-  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
 }
 
 .step {
@@ -408,12 +440,17 @@ body {
 }
 
 .step__line {
-  flex: 1;
+  position: absolute;
+  top: 15px;
   height: 2px;
-  margin: 15px 6px 0;
   background: var(--border-soft);
   transform-origin: left center;
   transition: background 0.3s ease;
+}
+
+.step-group:not(:first-child) .step__line {
+  left: calc(-50% + 16px);
+  right: calc(50% + 16px);
 }
 
 .step__line--done {
@@ -435,6 +472,57 @@ body {
 .wizard-actions {
   display: flex;
   gap: 10px;
+  justify-content: flex-end;
+}
+
+.wizard-actions--split {
+  justify-content: space-between;
+}
+
+.wizard-actions--fixed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom)) 20px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 82%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 96%, transparent) 100%
+  );
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 -12px 32px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  backdrop-filter: blur(24px) saturate(190%);
+}
+
+[data-theme="light"] .wizard-actions--fixed {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(255, 255, 255, 0.98) 100%
+  );
+  border-top-color: rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 -12px 32px rgba(44, 24, 16, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.wizard-actions__inner {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wizard-actions--offset {
+  margin-top: 14px;
 }
 
 .wizard-actions .btn {
@@ -481,6 +569,132 @@ body {
   font-size: 20px;
 }
 
+/* Botón "Ver máquinas seleccionadas" en el resumen */
+.wizard-machines {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.wizard-machines:active {
+  transform: scale(0.99);
+  border-color: var(--primary);
+}
+
+.wizard-machines__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wizard-machines__title {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.wizard-machines__sub {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Tarjetas de máquinas dentro del modal */
+.maquina-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.maquina-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+
+.maquina-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.maquina-card__name {
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maquina-card__qty {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.maquina-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.maquina-card__color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maquina-card__dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.maquina-card__unit {
+  margin-left: auto;
+}
+
+.maquina-card__subtotal {
+  margin-left: auto;
+  color: var(--text);
+}
+
+.maquina-card--total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 800;
+  border-color: transparent;
+}
+
+.maquina-card--total strong {
+  color: var(--primary);
+  font-size: 18px;
+}
+
 .form-section {
   display: flex;
   flex-direction: column;
@@ -506,16 +720,63 @@ body {
   gap: 12px;
 }
 
+.form-grid--cols {
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.form-grid--cols .form-field--wide {
+  grid-column: 1 / -1;
+}
+
+/* Tarjeta de formulario */
+.form-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  padding: 18px 20px;
+}
+
+.form-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.form-card__icon {
+  display: inline-flex;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.form-card__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+}
+
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .form-label {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-soft);
+}
+
+.form-label__hint {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
 }
 
 .form-input--error {
@@ -533,10 +794,10 @@ body {
 
 .form-input {
   width: 100%;
-  min-height: 46px;
+  min-height: 48px;
   padding: 0 14px;
   border: 1px solid var(--border-soft);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--surface-raised);
   color: var(--text);
   font-size: 15px;
@@ -1266,6 +1527,7 @@ select.form-input:disabled {
 /* ── Tarjeta de cotización / OT (estilo industrial exclusivo FICA) ── */
 
 .cot-card,
+.cot-card,
 .ot-card {
   position: relative;
   overflow: hidden;
@@ -1277,26 +1539,6 @@ select.form-input:disabled {
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.2s ease,
               box-shadow 0.2s ease;
-}
-
-/* Difuminado naranjo sutil en el lateral izquierdo */
-.cot-card::before,
-.ot-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 72px;
-  pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--primary) 20%, transparent) 0%,
-    color-mix(in srgb, var(--primary) 7%, transparent) 55%,
-    transparent 100%
-  );
-  border-radius: 18px 0 0 18px;
-  z-index: 0;
 }
 
 .cot-card__btn {
@@ -1699,6 +1941,19 @@ select.form-input:disabled {
   flex-shrink: 0;
 }
 
+.btn--icon-sm {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.wizard-actions .btn--icon-sm {
+  flex: 0 0 auto;
+}
+
 .icon-btn {
   width: 44px;
   height: 44px;
@@ -1882,6 +2137,114 @@ select.form-input:disabled {
   transform: scale(0.9);
   background: color-mix(in srgb, var(--primary) 25%, transparent);
   color: var(--primary);
+}
+
+/* ── Búsqueda plegable (lupa animada) ── */
+
+/* ── Búsqueda plegable (lupa sin recuadro + barra superior) ── */
+
+.collapsible-search__lupa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: color 0.2s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.collapsible-search__lupa:active {
+  transform: scale(0.92);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.collapsible-search-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+  background: var(--header-bg);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  animation: search-bar-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.collapsible-search-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
+  height: 46px;
+  padding: 0 14px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.collapsible-search-bar__row:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.collapsible-search-bar__icon {
+  display: inline-flex;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.collapsible-search-bar__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.collapsible-search-bar__input::placeholder {
+  color: var(--muted);
+}
+
+.collapsible-search-bar__close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.collapsible-search-bar__close:active {
+  background: var(--border-soft);
+  color: var(--text);
+}
+
+@keyframes search-bar-in {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* ── Conexiones ── */
@@ -2212,23 +2575,22 @@ select.form-input:disabled {
   font-weight: 700;
 }
 
-/* Botón flotante central (+): nueva cotización */
+/* Botón central "Nueva cotización": cuadrado redondeado, dentro de la barra */
 .bottom-nav__fab {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin-top: -30px;
-  border: 4px solid var(--surface);
-  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  margin: 0 8px;
+  border: none;
+  border-radius: 14px;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 45%, transparent);
   touch-action: manipulation;
-  transition: transform 0.15s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s ease, background 0.2s ease;
 }
 
 .bottom-nav__fab:active {
@@ -2241,6 +2603,10 @@ select.form-input:disabled {
   position: fixed;
   inset: 0;
   z-index: 40;
+}
+
+.more-sheet--front {
+  z-index: 80;
 }
 
 .more-sheet__backdrop {
@@ -2309,6 +2675,10 @@ select.form-input:disabled {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: min(55dvh, 460px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .more-sheet__item {
@@ -3609,14 +3979,91 @@ select.form-input:disabled {
   }
 }
 
-@keyframes fab-glow {
-  0%,
-  100% {
-    box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent);
+/* ── Transición horizontal entre pasos del wizard ── */
+
+.wizard-step {
+  will-change: transform, opacity;
+}
+
+.wizard-step--fwd {
+  animation: step-slide-in-right 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wizard-step--back {
+  animation: step-slide-in-left 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wizard-step--leaving {
+  animation: step-slide-out-left 0.23s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.wizard-step--leaving-back {
+  animation: step-slide-out-right 0.23s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes step-slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0.5;
   }
-  50% {
-    box-shadow: 0 8px 28px color-mix(in srgb, var(--accent) 58%, transparent);
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
+}
+
+@keyframes step-slide-in-left {
+  from {
+    transform: translateX(-100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes step-slide-out-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-100%);
+    opacity: 0.5;
+  }
+}
+
+@keyframes step-slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0.5;
+  }
+}
+
+/* Editor de productos (paso 2): entra por la derecha y sale por la izquierda. */
+.editor-overlay--wizard {
+  animation: step-slide-in-right 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.editor-overlay--wizard.editor-overlay--back {
+  animation: step-slide-in-left 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.editor-overlay--wizard.editor-overlay--leaving {
+  animation: step-slide-out-left 0.23s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.editor-overlay--wizard.editor-overlay--leaving-back {
+  animation: step-slide-out-right 0.23s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.editor-overlay--wizard .editor {
+  animation: none;
 }
 
 /* Recinto principal: se anima en cada cambio de vista (keyed en App.tsx). */
@@ -3673,11 +4120,6 @@ select.form-input:disabled {
 /* Tocar una tarjeta navegable la baja ligeramente */
 .card-list__item--tap:active {
   transform: scale(0.985);
-}
-
-/* Icono flotante "+" con brillo "respirando" (no pisa el tap hacia abajo) */
-.bottom-nav__fab {
-  animation: fab-glow 3.5s ease-in-out infinite;
 }
 
 /* Respeta la preferencia de movimiento reducido */
@@ -3808,6 +4250,29 @@ select.form-input:disabled {
   padding: 0;
 }
 
+.editor__footer .btn--icon-sm,
+.selection-summary-fixed .btn--icon-sm {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.editor__footer .btn--secondary.btn--icon-sm,
+.selection-summary-fixed .btn--secondary.btn--icon-sm {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  box-shadow: none;
+}
+
+[data-theme="light"] .editor__footer .btn--secondary.btn--icon-sm,
+[data-theme="light"] .selection-summary-fixed .btn--secondary.btn--icon-sm {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
 .editor__footer .btn:active:not(:disabled),
 .selection-summary-fixed .btn:active:not(:disabled) {
   transform: scale(0.95);
@@ -3845,6 +4310,12 @@ select.form-input:disabled {
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
+}
+
+.form-section__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .editor__add-title {
@@ -4113,4 +4584,148 @@ select.form-input:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.seguridad-actions--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.seguridad-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Modal de ingreso de PIN */
+.pin-modal__subtitle {
+  margin: 0 8px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.pin-modal__error {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+  text-align: center;
+}
+
+/* Input nativo de PIN */
+.pin-input {
+  width: 200px;
+  height: 54px;
+  margin: 0 auto 8px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.35em;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pin-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+/* Campo de teléfono con código de país */
+.phone-country {
+  display: flex;
+  align-items: stretch;
+  min-height: 48px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.phone-country:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.phone-country__code {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.phone-country__code:active {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+
+.phone-country__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.phone-country__input::placeholder {
+  color: var(--muted);
+}
+
+.phone-country__input:focus {
+  outline: none;
+}
+
+.phone-country__contacts {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  border: none;
+  border-left: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.phone-country__contacts:active {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+
+.phone-country__sheet-code {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.contacts-empty {
+  margin: 0;
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.contacts-empty--error {
+  color: var(--danger);
 }

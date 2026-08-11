@@ -15,6 +15,7 @@ import { ClientesScreen } from "./screens/ClientesScreen";
 import { ProductosScreen } from "./screens/ProductosScreen";
 import { SoporteScreen } from "./screens/SoporteScreen";
 import { ConexionesScreen } from "./screens/ConexionesScreen";
+import { SecurityScreen } from "./screens/SecurityScreen";
 import { ActualizacionesScreen } from "./screens/ActualizacionesScreen";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { refreshSolicitudes } from "./services/solicitudes";
@@ -37,6 +38,8 @@ function renderScreen(view: ViewId, setView: (view: ViewId) => void): React.JSX.
       return <SoporteScreen />;
     case "conexiones":
       return <ConexionesScreen />;
+    case "seguridad":
+      return <SecurityScreen />;
     case "empresa":
       return <EmpresaScreen onBack={() => setView("soporte")} />;
     case "actualizaciones":
@@ -51,7 +54,7 @@ export function App() {
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
-      if (detail && detail in { actualizaciones: 1, cotizaciones: 1, soporte: 1 }) {
+      if (detail && detail in { actualizaciones: 1, cotizaciones: 1, soporte: 1, seguridad: 1 }) {
         setView(detail as ViewId);
       }
     };
@@ -89,10 +92,12 @@ export function App() {
     );
   }
 
+  const isNueva = view === "nueva";
+
   return (
     <div className="app-shell">
       <ConnectionBanner />
-      <main className="content">
+      <main className={`content${isNueva ? " content--no-nav" : ""}`}>
         <PullToRefresh onRefresh={refreshSolicitudes}>
           <div key={view} className="view-transition">
             {renderScreen(view, setView)}
@@ -100,7 +105,7 @@ export function App() {
         </PullToRefresh>
       </main>
 
-      <BottomNav active={view} onChange={setView} />
+      {isNueva ? null : <BottomNav active={view} onChange={setView} />}
       <ToastHost />
       <PdfActionsSheet />
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Package, Clock, Headphones, ChevronRight } from "lucide-react";
+import { Package, Clock, Headphones, ChevronRight } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   borrarSolicitud,
@@ -16,6 +16,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { HistorialActionsSheet } from "../components/HistorialActionsSheet";
 import { Picker } from "../components/Picker";
+import { CollapsibleSearch } from "../components/CollapsibleSearch";
 import {
   estadoLabel,
   estadoPillVariant,
@@ -179,19 +180,13 @@ export function HistorialScreen() {
           <h1 className="view__title">Historial</h1>
           <p className="view__subtitle">Cotizaciones, OT y tickets cerrados</p>
         </div>
-      </div>
-
-      <div className="search-field" style={{ marginBottom: "10px" }}>
-        <span className="search-field__icon" aria-hidden="true">
-          <Search size={16} />
-        </span>
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Buscar por cliente, teléfono, producto..."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <div className="view__header__actions">
+          <CollapsibleSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por cliente, teléfono, producto..."
+          />
+        </div>
       </div>
 
       <div style={{ marginBottom: "14px" }}>

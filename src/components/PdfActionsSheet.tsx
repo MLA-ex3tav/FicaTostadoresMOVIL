@@ -11,6 +11,7 @@ import {
   compartirPdf,
   descargarPdf,
 } from "../lib/share";
+import { useSheetDrag } from "./useSheetDrag";
 
 interface SheetItem {
   id: string;
@@ -48,6 +49,7 @@ const ITEMS: SheetItem[] = [
 
 export function PdfActionsSheet() {
   const [pdf, setPdf] = useState<PdfFile | null>(null);
+  const { panelRef, requestClose } = useSheetDrag(() => closePdfActions());
 
   useEffect(() => subscribePdfActions(setPdf), []);
 
@@ -55,7 +57,7 @@ export function PdfActionsSheet() {
 
   const handle = (onClick: (p: PdfFile) => void) => {
     onClick(pdf);
-    closePdfActions();
+    requestClose();
   };
 
   return (
@@ -65,8 +67,8 @@ export function PdfActionsSheet() {
       aria-modal="true"
       aria-label="Acciones del documento"
     >
-      <div className="more-sheet__backdrop" onClick={() => closePdfActions()} />
-      <div className="more-sheet__panel">
+      <div className="more-sheet__backdrop" onClick={requestClose} />
+      <div ref={panelRef} className="more-sheet__panel">
         <header className="more-sheet__header">
           <span className="more-sheet__title more-sheet__title--file">
             {pdf.fileName}
@@ -75,7 +77,7 @@ export function PdfActionsSheet() {
             type="button"
             className="more-sheet__close"
             aria-label="Cerrar"
-            onClick={() => closePdfActions()}
+            onClick={requestClose}
           >
             <X size={18} />
           </button>

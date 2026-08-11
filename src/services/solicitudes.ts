@@ -122,6 +122,12 @@ async function sincronizarEstadosPendientes(): Promise<void> {
         } else {
           delete localOverrides[id];
         }
+      } else if (res.status === 404) {
+        // La OT ya no existe en el servidor: el cambio de estado no se puede
+        // aplicar y reintentarlo dejaría el banner de pendientes pegado.
+        console.warn(`[solicitudes] Estado descartado: la solicitud ${id} ya no existe en el servidor (404).`);
+        delete localEstados[id];
+        delete localOverrides[id];
       }
     }
     persistLocalEstados();
@@ -479,10 +485,12 @@ export function normalizarSolicitud(item: SolicitudRemota): SolicitudRemota {
   };
 }
 
-export async function refreshSolicitudes(): Promise<void> {
+export async function refreshSolicitudes(options?: { silent?: boolean }): Promise<void> {
   if (refreshInFlight) {
     return refreshInFlight;
   }
+
+  const silent = options?.silent ?? false;
 
   refreshInFlight = (async () => {
     // Solo emitimos el estado "loading" en la primera carga. En los polls
@@ -492,9 +500,10 @@ export async function refreshSolicitudes(): Promise<void> {
       emit();
     }
 
-    // Sin red: no martillar la API; los cambios locales ya están persistidos
-    // y se sincronizarán cuando se recupere la conexión.
-    if (getNetworkState() === "offline") {
+    // Sin red: no martillar la API en el polling de fondo; los cambios locales
+    // ya están persistidos y se sincronizarán al reconectar. El refresco
+    // MANUAL (pull-to-refresh) siempre intenta recargar.
+    if (silent && getNetworkState() === "offline") {
       state.error = "Sin conexión. Los datos se actualizarán al reconectar.";
       state.loading = false;
       emit();
@@ -554,7 +563,7 @@ export function startSolicitudesPolling(): void {
   stopSolicitudesPolling();
   void refreshSolicitudes();
   pollTimer = window.setInterval(
-    () => void refreshSolicitudes(),
+    () => void refreshSolicitudes({ silent: true }),
     POLL_INTERVAL_MS,
   );
 }

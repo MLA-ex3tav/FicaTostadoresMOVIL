@@ -4,11 +4,16 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ChevronRight,
+  Eye,
   FileText,
+  Menu,
   Minus,
   Plus,
   Search,
+  Share2,
   Trash2,
+  User,
   X,
 } from "lucide-react";
 import {
@@ -29,6 +34,9 @@ import {
   PRODUCT_COLORS,
 } from "../lib/product-colors";
 import { EmptyState } from "../components/EmptyState";
+import { useSheetDrag } from "../components/useSheetDrag";
+import { MaquinasSheet, type MaquinaItem } from "../components/MaquinasSheet";
+import { PhoneCountryField } from "../components/PhoneCountryField";
 import {
   enviarCotizacionAFirebase,
 } from "../services/solicitudes";
@@ -36,7 +44,9 @@ import {
   clearCotizacionDraft,
   loadCotizacionDraft,
   saveCotizacionDraft,
+  type CotizacionDraft,
 } from "../services/cotizacion-draft";
+import { extraerComunaDeDireccion, formatRut } from "./shared";
 
 interface ItemSeleccionado {
   productId: string;
@@ -108,9 +118,31 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   });
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [draftBanner, setDraftBanner] = useState(false);
   const [nameError, setNameError] = useState(false);
   const [collapsing, setCollapsing] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"idle" | "leaving" | "leaving-back">("idle");
+  const [dir, setDir] = useState<1 | -1>(1);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const { panelRef: actionsPanelRef, requestClose: actionsRequestClose } = useSheetDrag(() =>
+    setActionsOpen(false),
+  );
+  const [draftPrompt, setDraftPrompt] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<CotizacionDraft | null>(null);
+  const { panelRef: draftPanelRef, requestClose: draftRequestClose } = useSheetDrag(() =>
+    setDraftPrompt(false),
+  );
+  const [maquinasOpen, setMaquinasOpen] = useState(false);
+
+  const goTo = (next: number) => {
+    if (phase !== "idle" || next === step || next < 1 || next > 3) return;
+    const direction: 1 | -1 = next > step ? 1 : -1;
+    setDir(direction);
+    setPhase(direction === 1 ? "leaving" : "leaving-back");
+    window.setTimeout(() => {
+      setStep(next);
+      setPhase("idle");
+    }, 230);
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeCatalogo((docs) => {
@@ -151,35 +183,8 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       Object.keys(draft.seleccion ?? {}).length > 0;
     if (!hasContent) return;
 
-    setStep(Math.min(Math.max(draft.step ?? 1, 1), 3));
-    setCliente({
-      name: draft.cliente?.name ?? "",
-      phone: draft.cliente?.phone ?? "",
-      address: draft.cliente?.address ?? "",
-      rut: draft.cliente?.rut ?? "",
-      email: draft.cliente?.email ?? "",
-      comuna: draft.cliente?.comuna ?? "",
-    });
-    setMessage(draft.message ?? "");
-    setSeleccion(
-      Object.fromEntries(
-        Object.entries(draft.seleccion ?? {}).map(([id, value]) => {
-          const item = (
-            typeof value === "number" ? { quantity: value } : value
-          ) as Partial<ItemSeleccionado>;
-          return [
-            id,
-            {
-              productId: id,
-              quantity: Math.max(1, Number(item?.quantity) || 1),
-              selectedColorId: item?.selectedColorId,
-              selectedColor: item?.selectedColor,
-            },
-          ];
-        }),
-      ),
-    );
-    setDraftBanner(true);
+    setPendingDraft(draft);
+    setDraftPrompt(true);
   }, []);
 
   useEffect(() => {
@@ -212,20 +217,52 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     });
   }, [step, cliente, message, seleccion]);
 
-  const descartarBorrador = () => {
-    clearCotizacionDraft();
-    setDraftBanner(false);
-    setStep(1);
+  const aplicarBorrador = (draft: CotizacionDraft) => {
+    setStep(Math.min(Math.max(draft.step ?? 1, 1), 3));
     setCliente({
-      name: "",
-      phone: "",
-      address: "",
-      rut: "",
-      email: "",
-      comuna: "",
+      name: draft.cliente?.name ?? "",
+      phone: draft.cliente?.phone ?? "",
+      address: draft.cliente?.address ?? "",
+      rut: draft.cliente?.rut ?? "",
+      email: draft.cliente?.email ?? "",
+      comuna: draft.cliente?.comuna ?? "",
     });
-    setMessage("");
-    setSeleccion({});
+    setMessage(draft.message ?? "");
+    setSeleccion(
+      Object.fromEntries(
+        Object.entries(draft.seleccion ?? {}).map(([id, value]) => {
+          const item = (
+            typeof value === "number" ? { quantity: value } : value
+          ) as Partial<ItemSeleccionado>;
+          return [
+            id,
+            {
+              productId: id,
+              quantity: Math.max(1, Number(item?.quantity) || 1),
+              selectedColorId: item?.selectedColorId,
+              selectedColor: item?.selectedColor,
+            },
+          ];
+        }),
+      ),
+    );
+    showToast({
+      title: "Borrador restaurado",
+      message: "Continuaste donde lo dejaste la última vez.",
+      tone: "info",
+      icon: "fileText",
+    });
+  };
+
+  const restaurarBorrador = () => {
+    if (pendingDraft) aplicarBorrador(pendingDraft);
+    setDraftPrompt(false);
+  };
+
+  const descartarBorradorPrompt = () => {
+    clearCotizacionDraft();
+    setPendingDraft(null);
+    setDraftPrompt(false);
   };
 
   const filtered = useMemo(() => {
@@ -265,6 +302,16 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   const totalCotizacion = items.reduce(
     (sum, item) => sum + getPrecioLocal(item.product) * item.quantity,
     0,
+  );
+
+  const maquinasItems: MaquinaItem[] = items.map(
+    ({ product, quantity, selectedColorId, selectedColor }) => ({
+      name: String(product.name ?? product.modelo ?? "Producto"),
+      quantity,
+      unitPrice: getPrecioLocal(product),
+      colorId: selectedColorId,
+      color: selectedColor,
+    }),
   );
 
   const agregar = (product: ProductoCatalogo) => {
@@ -329,6 +376,7 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
   };
 
   const irSiguiente = () => {
+    if (phase !== "idle") return;
     if (step === 1 && !cliente.name.trim()) {
       setNameError(true);
       return;
@@ -341,8 +389,9 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       });
       return;
     }
+    if (step === 3) return;
     setNameError(false);
-    setStep((current) => Math.min(current + 1, 3));
+    goTo(step + 1);
   };
 
   const prepararItemYPayload = (): { item: SolicitudRemota; payload: RegistroOrdenTrabajoPayload } => {
@@ -484,56 +533,55 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const descartarCotizacion = () => {
+    clearCotizacionDraft();
+    onBack();
+  };
+
   return (
     <div className="screen">
       <div className="view__header">
-        <div className="view__header-row">
+        <div>
+          <div className="view__eyebrow">Operación</div>
+          <h1 className="view__title">Nueva cotización</h1>
+          <p className="view__subtitle">
+            Paso {step} de 3 · {["Datos", "Productos", "Enviar"][step - 1]}
+          </p>
+        </div>
+        <div className="view__header__actions">
           <button
             type="button"
-            className="btn btn--secondary btn--icon"
-            onClick={() => (step === 1 ? onBack() : setStep((current) => current - 1))}
-            aria-label="Volver"
+            className="more-sheet__close"
+            onClick={onBack}
+            aria-label="Cerrar"
           >
-            <ArrowLeft size={18} />
+            <X size={22} />
           </button>
-          <div>
-            <div className="view__eyebrow">Operación</div>
-            <h1 className="view__title">Nueva cotización</h1>
-            <p className="view__subtitle">
-              Paso {step} de 3 · {["Datos", "Productos", "Enviar"][step - 1]}
-            </p>
-          </div>
         </div>
       </div>
 
       <StepIndicator current={step} />
 
-      {draftBanner ? (
-        <div className="draft-banner">
-          <div className="draft-banner__info">
-            <span className="draft-banner__icon" aria-hidden="true">
-              <FileText size={16} />
-            </span>
-            <span className="draft-banner__text">
-              <strong>Borrador restaurado</strong>
-              <span>Continuaste donde lo dejaste la última vez.</span>
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn btn--secondary btn--sm"
-            onClick={descartarBorrador}
-          >
-            <Trash2 size={12} /> Descartar
-          </button>
-        </div>
-      ) : null}
-
       {step === 1 ? (
-        <>
-          <section className="form-section">
+        <div
+          key={step}
+          className={`wizard-step wizard-step--fill wizard-step--${dir === 1 ? "fwd" : "back"}${
+            phase === "leaving"
+              ? " wizard-step--leaving"
+              : phase === "leaving-back"
+                ? " wizard-step--leaving-back"
+                : ""
+          }`}
+        >
+          <section className="form-card">
+            <div className="form-card__header">
+              <span className="form-card__icon" aria-hidden="true">
+                <User size={16} />
+              </span>
+              <h3 className="form-card__title">Datos del cliente</h3>
+            </div>
             <div className="form-grid">
-              <div className="form-field">
+              <div className="form-field form-field--wide">
                 <label className="form-label" htmlFor="nc-name">Nombre / Razón social *</label>
                 <input
                   id="nc-name"
@@ -554,14 +602,10 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label" htmlFor="nc-phone">Teléfono</label>
-                <input
+                <PhoneCountryField
                   id="nc-phone"
-                  className="form-input"
-                  type="tel"
-                  inputMode="tel"
                   value={cliente.phone}
-                  onChange={(event) => setCliente({ ...cliente, phone: event.target.value })}
-                  placeholder="+56 9 1234 5678"
+                  onChange={(phone) => setCliente({ ...cliente, phone })}
                 />
               </div>
               <div className="form-field">
@@ -574,12 +618,12 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   autoComplete="off"
                   value={cliente.rut}
                   onChange={(event) =>
-                    setCliente({ ...cliente, rut: event.target.value.replace(/\D/g, "") })
+                    setCliente({ ...cliente, rut: formatRut(event.target.value) })
                   }
-                  placeholder="123456789"
+                  placeholder="12.345.678-9"
                 />
               </div>
-              <div className="form-field">
+              <div className="form-field form-field--wide">
                 <label className="form-label" htmlFor="nc-email">E-mail</label>
                 <input
                   id="nc-email"
@@ -591,55 +635,56 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   placeholder="cliente@correo.cl"
                 />
               </div>
-              <div className="form-field">
-                <label className="form-label" htmlFor="nc-comuna">Comuna</label>
-                <input
-                  id="nc-comuna"
-                  className="form-input"
-                  type="text"
-                  value={cliente.comuna}
-                  onChange={(event) => setCliente({ ...cliente, comuna: event.target.value })}
-                  placeholder="Padre Las Casas"
-                />
-              </div>
               <div className="form-field form-field--wide">
-                <label className="form-label" htmlFor="nc-address">Dirección</label>
+                <label className="form-label" htmlFor="nc-address">
+                  Dirección <span className="form-label__hint">(incluye comuna)</span>
+                </label>
                 <input
                   id="nc-address"
                   className="form-input"
                   type="text"
                   value={cliente.address}
                   autoComplete="off"
-                  onChange={(event) => setCliente({ ...cliente, address: event.target.value })}
-                  placeholder="Calle, número, depto · Comuna, Región, País"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setCliente({
+                      ...cliente,
+                      address: value,
+                      comuna: extraerComunaDeDireccion(value),
+                    });
+                  }}
+                  placeholder="Ej. Av. Los Pinos 123, Padre Las Casas"
                 />
               </div>
             </div>
           </section>
-
-          <div className="wizard-actions">
-            <button type="button" className="btn btn--primary" onClick={irSiguiente}>
-              Siguiente <ArrowRight size={16} />
-            </button>
-          </div>
-        </>
+        </div>
       ) : null}
 
       {step === 2 ? createPortal(
-        <div className="editor-overlay">
+        <div
+          className={`editor-overlay editor-overlay--wizard${dir === 1 ? "" : " editor-overlay--back"}${
+            phase === "leaving"
+              ? " editor-overlay--leaving"
+              : phase === "leaving-back"
+                ? " editor-overlay--leaving-back"
+                : ""
+          }`}
+        >
           <div className="editor" role="dialog" aria-modal="true" aria-label="Productos de la cotización">
             <header className="editor__header">
               <div className="editor__header-info">
-                <span className="view__eyebrow">Nueva cotización</span>
-                <h2 className="editor__title">Productos</h2>
+                <div className="view__eyebrow">Operación</div>
+                <h2 className="view__title">Nueva cotización</h2>
+                <p className="view__subtitle">Paso 2 de 3 · Productos</p>
               </div>
               <button
                 type="button"
-                className="btn btn--secondary btn--icon"
-                onClick={() => setStep(1)}
-                aria-label="Volver a datos del cliente"
+                className="more-sheet__close"
+                onClick={onBack}
+                aria-label="Cerrar"
               >
-                <ArrowLeft size={18} />
+                <X size={22} />
               </button>
             </header>
 
@@ -647,9 +692,20 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               <section className="form-section">
                 <div className="form-section__row">
                   <h3 className="form-section__title">Productos</h3>
-                  <span className="editor__count">
-                    {totalProductos} producto{totalProductos === 1 ? "" : "s"}
-                  </span>
+                  <div className="form-section__row-actions">
+                    <span className="editor__count">
+                      {totalProductos} producto{totalProductos === 1 ? "" : "s"}
+                    </span>
+                    {items.length > 0 ? (
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        onClick={() => setMaquinasOpen(true)}
+                      >
+                        <Eye size={14} /> Ver
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="search-field">
                   <span className="search-field__icon" aria-hidden="true">
@@ -808,6 +864,15 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
             </div>
 
             <footer className="editor__footer">
+              <button
+                type="button"
+                className="btn btn--secondary btn--icon btn--icon-sm"
+                onClick={() => goTo(1)}
+                disabled={generating}
+                aria-label="Volver a datos del cliente"
+              >
+                <ArrowLeft size={20} />
+              </button>
               <div className="editor__total">
                 <span className="editor__total-label">
                   Total ({items.length} producto{items.length === 1 ? "" : "s"})
@@ -816,11 +881,12 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
               </div>
               <button
                 type="button"
-                className="btn btn--primary"
+                className="btn btn--primary btn--icon btn--icon-sm"
                 onClick={irSiguiente}
                 disabled={items.length === 0}
+                aria-label="Siguiente paso"
               >
-                <Check size={18} strokeWidth={2.5} /> Listo
+                <ArrowRight size={20} />
               </button>
             </footer>
           </div>
@@ -829,7 +895,16 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
       ) : null}
 
       {step === 3 ? (
-        <>
+        <div
+          key={step}
+          className={`wizard-step wizard-step--fill wizard-step--${dir === 1 ? "fwd" : "back"}${
+            phase === "leaving"
+              ? " wizard-step--leaving"
+              : phase === "leaving-back"
+                ? " wizard-step--leaving-back"
+                : ""
+          }`}
+        >
           <section className="form-section">
             <h2 className="form-section__title">Revisar y enviar</h2>
             <div className="wizard-summary">
@@ -859,48 +934,220 @@ export function NuevaCotizacionScreen({ onBack }: { onBack: () => void }) {
                   {totalProductos} producto{totalProductos === 1 ? "" : "s"}
                 </strong>
               </div>
-              {items.map(({ product, quantity, selectedColorId, selectedColor }) => (
-                <div key={product.id} className="wizard-summary__row">
-                  <span>
-                    {String(product.name ?? product.modelo ?? "Producto")} × {quantity}
-                    {getProductColorLabel(selectedColorId)
-                      ? ` · ${getProductColorLabel(selectedColorId)}`
-                      : selectedColor
-                        ? ` · ${selectedColor}`
-                        : ""}
+              {items.length > 1 ? (
+                <button
+                  type="button"
+                  className="wizard-machines"
+                  onClick={() => setMaquinasOpen(true)}
+                >
+                  <span className="wizard-machines__info">
+                    <span className="wizard-machines__title">Ver máquinas seleccionadas</span>
+                    <span className="wizard-machines__sub">
+                      {items.length} máquina{items.length === 1 ? "" : "s"} ·{" "}
+                      {totalProductos} producto{totalProductos === 1 ? "" : "s"}
+                    </span>
                   </span>
-                  <strong>{formatPrecio(getPrecioLocal(product) * quantity)}</strong>
-                </div>
-              ))}
+                  <ChevronRight size={18} />
+                </button>
+              ) : (
+                items.map(({ product, quantity, selectedColorId, selectedColor }) => (
+                  <div key={product.id} className="wizard-summary__row">
+                    <span>
+                      {String(product.name ?? product.modelo ?? "Producto")} × {quantity}
+                      {getProductColorLabel(selectedColorId)
+                        ? ` · ${getProductColorLabel(selectedColorId)}`
+                        : selectedColor
+                          ? ` · ${selectedColor}`
+                          : ""}
+                    </span>
+                    <strong>{formatPrecio(getPrecioLocal(product) * quantity)}</strong>
+                  </div>
+                ))
+              )}
               <div className="wizard-summary__row wizard-summary__row--total">
                 <span>Total estimado</span>
                 <strong>{formatPrecio(totalCotizacion)}</strong>
               </div>
             </div>
-          </section>
 
-          <div className="wizard-actions wizard-actions--column">
-            <button
-              type="button"
-              className="btn btn--secondary btn--block"
-              onClick={() => void guardar()}
-              disabled={generating}
-            >
-              <Check size={18} />
-              Guardar
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary btn--block"
-              onClick={() => void generar()}
-              disabled={generating}
-            >
-              <FileText size={18} />
-              {generating ? "Generando PDF…" : "Guardar y generar PDF"}
-            </button>
-          </div>
-        </>
+            <div className="form-field form-field--wide" style={{ marginTop: "16px" }}>
+              <label className="form-label" htmlFor="nc-obs">
+                Observaciones
+              </label>
+              <textarea
+                id="nc-obs"
+                className="form-input form-textarea"
+                placeholder="Notas que aparecerán en la sección Observación del PDF (opcional)"
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                rows={3}
+              />
+            </div>
+          </section>
+        </div>
       ) : null}
+
+      {actionsOpen
+        ? createPortal(
+            <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Opciones de la cotización">
+              <div className="more-sheet__backdrop" onClick={actionsRequestClose} />
+              <div ref={actionsPanelRef} className="more-sheet__panel">
+                <header className="more-sheet__header">
+                  <span className="more-sheet__title">Opciones de la cotización</span>
+                  <span className="more-sheet__icon" aria-hidden="true">
+                    <Menu size={18} />
+                  </span>
+                </header>
+                <div className="more-sheet__list">
+                  <button
+                    type="button"
+                    className="more-sheet__item"
+                    onClick={() => {
+                      actionsRequestClose();
+                      void guardar();
+                    }}
+                    disabled={generating}
+                  >
+                    <span className="more-sheet__item-icon more-sheet__item-icon--success" aria-hidden="true">
+                      <Check size={20} />
+                    </span>
+                    <span className="more-sheet__item-label">Guardar</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="more-sheet__item"
+                    onClick={() => {
+                      actionsRequestClose();
+                      void generar();
+                    }}
+                    disabled={generating}
+                  >
+                    <span className="more-sheet__item-icon" aria-hidden="true">
+                      <Share2 size={20} />
+                    </span>
+                    <span className="more-sheet__item-label">Compartir</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="more-sheet__item more-sheet__item--danger"
+                    onClick={() => {
+                      actionsRequestClose();
+                      descartarCotizacion();
+                    }}
+                  >
+                    <span className="more-sheet__item-icon more-sheet__item-icon--danger" aria-hidden="true">
+                      <Trash2 size={20} />
+                    </span>
+                    <span className="more-sheet__item-label">Descartar</span>
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {draftPrompt
+        ? createPortal(
+            <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Restaurar borrador">
+              <div className="more-sheet__backdrop" onClick={draftRequestClose} />
+              <div ref={draftPanelRef} className="more-sheet__panel">
+                <header className="more-sheet__header">
+                  <span className="more-sheet__title">Borrador encontrado</span>
+                  <span className="more-sheet__icon" aria-hidden="true">
+                    <FileText size={18} />
+                  </span>
+                </header>
+                <div className="more-sheet__list">
+                  <p className="confirm-sheet__message">
+                    Tienes una cotización sin terminar. ¿Quieres restaurarla para continuar
+                    donde la dejaste?
+                  </p>
+                  <button
+                    type="button"
+                    className="more-sheet__item"
+                    onClick={restaurarBorrador}
+                  >
+                    <span className="more-sheet__item-icon more-sheet__item-icon--success" aria-hidden="true">
+                      <Check size={20} />
+                    </span>
+                    <span className="more-sheet__item-label">Restaurar</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="more-sheet__item more-sheet__item--danger"
+                    onClick={descartarBorradorPrompt}
+                  >
+                    <span className="more-sheet__item-icon more-sheet__item-icon--danger" aria-hidden="true">
+                      <Trash2 size={20} />
+                    </span>
+                    <span className="more-sheet__item-label">Descartar</span>
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {maquinasOpen ? (
+        <MaquinasSheet
+          items={maquinasItems}
+          total={totalCotizacion}
+          onClose={() => setMaquinasOpen(false)}
+        />
+      ) : null}
+
+      {step === 1 || step === 3
+        ? createPortal(
+            <div className="wizard-actions wizard-actions--fixed">
+              <div className="wizard-actions__inner">
+                {step === 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--icon btn--icon-sm"
+                      onClick={onBack}
+                      aria-label="Salir"
+                    >
+                      <ArrowLeft size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--icon btn--icon-sm"
+                      onClick={irSiguiente}
+                      aria-label="Siguiente paso"
+                    >
+                      <ArrowRight size={20} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--icon btn--icon-sm"
+                      onClick={() => goTo(2)}
+                      disabled={generating}
+                      aria-label="Volver a productos"
+                    >
+                      <ArrowLeft size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--icon btn--icon-sm"
+                      onClick={() => setActionsOpen(true)}
+                      disabled={generating}
+                      aria-label="Guardar y compartir"
+                    >
+                      <Share2 size={20} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

@@ -98,12 +98,20 @@ function syncPriceToServer(productId: string, price: number): void {
     body: JSON.stringify({ price }),
   })
     .then((res) => {
-      if (res.ok) {
+      const dropPending = () => {
         const prices = readLocalPrices();
         if (prices[productId] !== undefined) {
           delete prices[productId];
           writeLocalPrices(prices);
         }
+      };
+      if (res.ok) {
+        dropPending();
+      } else if (res.status === 404) {
+        // El producto ya no existe en el servidor: nunca se podrá sincronizar.
+        // Se descarta para que no quede el banner de pendientes pegado por siempre.
+        console.warn(`[catalog] Precio descartado: el producto ${productId} ya no existe en el servidor (404).`);
+        dropPending();
       }
     })
     .catch((error) => {
@@ -173,6 +181,15 @@ export async function syncAllPreciosToServer(): Promise<SyncResult> {
       );
 
       if (res.ok) {
+        const pending = readLocalPrices();
+        if (pending[id] !== undefined) {
+          delete pending[id];
+          writeLocalPrices(pending);
+        }
+      } else if (res.status === 404) {
+        // Producto eliminado en el servidor: reintentarlo no tiene sentido.
+        // Se descarta para no dejar el banner de sincronización pegado.
+        console.warn(`[catalog] Precio descartado: el producto ${id} ya no existe en el servidor (404).`);
         const pending = readLocalPrices();
         if (pending[id] !== undefined) {
           delete pending[id];

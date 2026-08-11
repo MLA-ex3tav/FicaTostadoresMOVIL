@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { CloudUpload, Package, RefreshCw, Search } from "lucide-react";
+import { CloudUpload, Package, RefreshCw } from "lucide-react";
 import {
   getPrecioLocal,
   loadCatalogo,
@@ -11,6 +11,8 @@ import {
 } from "../services/catalog";
 import { showToast } from "../ui/toast";
 import { EmptyState } from "../components/EmptyState";
+import { useSheetDrag } from "../components/useSheetDrag";
+import { CollapsibleSearch } from "../components/CollapsibleSearch";
 
 function formatPrecio(valor: number): string {
   return new Intl.NumberFormat("es-CL", {
@@ -37,6 +39,7 @@ export function ProductosScreen() {
   const [selected, setSelected] = useState<ProductoCatalogo | null>(null);
   const [precioEdit, setPrecioEdit] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const { panelRef, requestClose } = useSheetDrag(() => setSelected(null));
 
   const cargar = async () => {
     setLoading(true);
@@ -132,6 +135,11 @@ export function ProductosScreen() {
           <p className="view__subtitle">Catálogo de tostadoras y accesorios</p>
         </div>
         <div className="view__header__actions">
+          <CollapsibleSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por nombre, modelo o categoría…"
+          />
           <button
             className="btn btn--secondary btn--icon"
             type="button"
@@ -152,19 +160,6 @@ export function ProductosScreen() {
             <RefreshCw size={16} className={loading ? "spin" : ""} />
           </button>
         </div>
-      </div>
-
-      <div className="search-field">
-        <span className="search-field__icon" aria-hidden="true">
-          <Search size={16} />
-        </span>
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Buscar por nombre, modelo o categoría…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
       </div>
 
       <div className="panel">
@@ -219,8 +214,8 @@ export function ProductosScreen() {
 
       {selected ? createPortal(
         <div className="more-sheet" role="dialog" aria-modal="true" aria-label={`Editar precio de ${selected.name ?? selected.modelo ?? "producto"}`}>
-          <div className="more-sheet__backdrop" onClick={() => setSelected(null)} />
-          <div className="more-sheet__panel">
+          <div className="more-sheet__backdrop" onClick={requestClose} />
+          <div ref={panelRef} className="more-sheet__panel">
             <div className="modal-sheet__body">
               <div className="modal-sheet__title">Editar precio</div>
               <div>
@@ -252,7 +247,7 @@ export function ProductosScreen() {
                 </span>
               </div>
               <div className="modal__actions">
-                <button type="button" className="btn btn--secondary" onClick={() => setSelected(null)}>
+                <button type="button" className="btn btn--secondary" onClick={requestClose}>
                   Cancelar
                 </button>
                 <button type="button" className="btn btn--primary" onClick={guardarPrecio}>

@@ -151,6 +151,28 @@ export function resumirProductos(item: SolicitudRemota): string {
   return extra > 0 ? `${names[0]} +${extra}` : names[0];
 }
 
+/**
+ * Extrae la comuna desde una dirección libre ("Calle 123, Comuna").
+ * Toma el último segmento tras el último separador (coma, punto y coma o ·).
+ */
+export function extraerComunaDeDireccion(texto: string): string {
+  const partes = texto
+    .split(/[·,;]/)
+    .map((parte) => parte.trim())
+    .filter(Boolean);
+  return partes.length > 1 ? partes[partes.length - 1] : "";
+}
+
+/** Formatea un RUT como 12.345.678-9 (máscara visual). */
+export function formatRut(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 9);
+  if (!digits) return "";
+  const body = digits.slice(0, -1);
+  const dv = digits.slice(-1);
+  const bodyFormatted = body.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${bodyFormatted}-${dv}`;
+}
+
 /** Extrae los colores seleccionados de los productos de una cotización (desde la web). */
 export function coloresProductos(item: SolicitudRemota): ProductoColorResumen[] {
   if (!Array.isArray(item.products)) return [];

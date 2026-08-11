@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
 import {
   getSolicitudDate,
   subscribeSolicitudes,
@@ -7,6 +6,7 @@ import {
 } from "../services/solicitudes";
 import { StatusPill } from "../components/StatusPill";
 import { EmptyState } from "../components/EmptyState";
+import { CollapsibleSearch } from "../components/CollapsibleSearch";
 import { formatFecha } from "./shared";
 
 interface ClienteInfo {
@@ -100,19 +100,13 @@ export function ClientesScreen() {
           <h1 className="view__title">Clientes</h1>
           <p className="view__subtitle">Historial y reincidencia por cliente</p>
         </div>
-      </div>
-
-      <div className="search-field">
-        <span className="search-field__icon" aria-hidden="true">
-          <Search size={16} />
-        </span>
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Buscar cliente…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <div className="view__header__actions">
+          <CollapsibleSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar cliente…"
+          />
+        </div>
       </div>
 
       <div className="panel">

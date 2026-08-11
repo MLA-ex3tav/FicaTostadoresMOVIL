@@ -12,6 +12,7 @@ import {
   coloresProductos,
 } from "../screens/shared";
 import { ProductColorSwatches } from "./ProductColorSwatches";
+import { useSheetDrag } from "./useSheetDrag";
 
 interface CotizacionActionsSheetProps {
   item: SolicitudRemota;
@@ -41,11 +42,12 @@ export function CotizacionActionsSheet({
   onEliminar,
 }: CotizacionActionsSheetProps) {
   const estado = getEstado(item, "pendiente");
+  const { panelRef, requestClose } = useSheetDrag(onClose, { enabled: !busy });
 
   return createPortal(
     <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Acciones de la cotización">
-      <div className="more-sheet__backdrop" onClick={busy ? undefined : onClose} />
-      <div className="more-sheet__panel">
+      <div className="more-sheet__backdrop" onClick={busy ? undefined : requestClose} />
+      <div ref={panelRef} className="more-sheet__panel">
         <header className="more-sheet__header">
           <div className="cotizacion-sheet__info">
             <span className="cotizacion-sheet__name">
@@ -63,7 +65,7 @@ export function CotizacionActionsSheet({
             type="button"
             className="more-sheet__close"
             aria-label="Cerrar"
-            onClick={onClose}
+            onClick={requestClose}
           >
             <X size={18} />
           </button>

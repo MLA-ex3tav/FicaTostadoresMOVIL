@@ -1,5 +1,6 @@
 import { Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
+import { useSheetDrag } from "./useSheetDrag";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -20,12 +21,14 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { panelRef, requestClose } = useSheetDrag(onCancel, { enabled: !busy });
+
   if (!open) return null;
 
   return createPortal(
     <div className="more-sheet" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="more-sheet__backdrop" onClick={busy ? undefined : onCancel} />
-      <div className="more-sheet__panel">
+      <div className="more-sheet__backdrop" onClick={busy ? undefined : requestClose} />
+      <div ref={panelRef} className="more-sheet__panel">
         <div className="confirm-sheet">
           <div className="confirm-sheet__icon" aria-hidden="true">
             <Trash2 size={22} />
@@ -34,7 +37,7 @@ export function ConfirmDialog({
           <div className="confirm-sheet__message">{message}</div>
         </div>
         <div className="more-sheet__list confirm-sheet__actions">
-          <button type="button" className="more-sheet__item" onClick={onCancel} disabled={busy}>
+          <button type="button" className="more-sheet__item" onClick={requestClose} disabled={busy}>
             <span className="more-sheet__item-label">Cancelar</span>
           </button>
           <button

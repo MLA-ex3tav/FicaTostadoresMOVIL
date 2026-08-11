@@ -10,6 +10,7 @@ import {
   formatFechaHora,
   getEstado,
 } from "../screens/shared";
+import { useSheetDrag } from "./useSheetDrag";
 
 interface SoporteActionsSheetProps {
   item: SolicitudRemota;
@@ -38,11 +39,12 @@ export function SoporteActionsSheet({
   const phone = String(item.clientPhone ?? "");
   const puedeAtender = ["abierta", "pendiente"].includes(estado);
   const puedeResolver = ["abierta", "pendiente", "en_curso", "en_revision"].includes(estado);
+  const { panelRef, requestClose } = useSheetDrag(onClose, { enabled: !busy && acting === null });
 
   return createPortal(
     <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Acciones de soporte">
-      <div className="more-sheet__backdrop" onClick={busy || acting ? undefined : onClose} />
-      <div className="more-sheet__panel">
+      <div className="more-sheet__backdrop" onClick={busy || acting ? undefined : requestClose} />
+      <div ref={panelRef} className="more-sheet__panel">
         <header className="more-sheet__header">
           <div className="cotizacion-sheet__info">
             <span className="cotizacion-sheet__name">
@@ -55,7 +57,7 @@ export function SoporteActionsSheet({
           <div className="cotizacion-sheet__pill">
             <StatusPill label={estadoLabel(estado)} variant={estadoPillVariant(estado)} />
           </div>
-          <button type="button" className="more-sheet__close" aria-label="Cerrar" onClick={onClose}>
+          <button type="button" className="more-sheet__close" aria-label="Cerrar" onClick={requestClose}>
             <X size={18} />
           </button>
         </header>

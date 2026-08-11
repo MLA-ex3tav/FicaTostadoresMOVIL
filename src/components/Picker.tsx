@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "lucide-react";
+import { useSheetDrag } from "./useSheetDrag";
 
 export interface PickerOption {
   value: string;
@@ -37,6 +38,7 @@ export function Picker({
 }: PickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const { panelRef, requestClose } = useSheetDrag(() => setOpen(false));
 
   const normalized = useMemo(() => normalize(options), [options]);
 
@@ -79,15 +81,15 @@ export function Picker({
       {open
         ? createPortal(
             <div className="picker-sheet" role="dialog" aria-modal="true" aria-label={label}>
-              <div className="picker-sheet__backdrop" onClick={() => setOpen(false)} />
-              <div className="picker-sheet__panel">
+              <div className="picker-sheet__backdrop" onClick={requestClose} />
+              <div ref={panelRef} className="picker-sheet__panel">
                 <header className="picker-sheet__header">
                   <span className="picker-sheet__title">{label}</span>
                   <button
                     type="button"
                     className="picker-sheet__close"
                     aria-label="Cerrar"
-                    onClick={() => setOpen(false)}
+                    onClick={requestClose}
                   >
                     <X size={20} />
                   </button>

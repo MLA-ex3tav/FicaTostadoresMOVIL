@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Headphones, Check, Search, X, Wrench, MessageSquare, ChevronRight } from "lucide-react";
+import { Headphones, Check, X, Wrench, MessageSquare, ChevronRight } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import { actualizarEstadoSolicitud } from "../lib/web-api";
 import {
@@ -18,6 +18,8 @@ import { WhatsAppIcon } from "../components/WhatsAppIcon";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SoporteActionsSheet } from "../components/SoporteActionsSheet";
 import { Picker } from "../components/Picker";
+import { useSheetDrag } from "../components/useSheetDrag";
+import { CollapsibleSearch } from "../components/CollapsibleSearch";
 import {
   ESTADO_LABELS,
   estadoLabel,
@@ -44,6 +46,9 @@ export function SoporteScreen() {
   const [actionsFor, setActionsFor] = useState<SolicitudRemota | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SolicitudRemota | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const { panelRef: detallePanelRef, requestClose: detalleRequestClose } = useSheetDrag(() =>
+    setSelectedTicket(null),
+  );
 
   useEffect(() => {
     return subscribeSolicitudes(setState);
@@ -167,19 +172,13 @@ export function SoporteScreen() {
           <h1 className="view__title">Soporte Técnico</h1>
           <p className="view__subtitle">Atención y seguimiento de servicio posventa</p>
         </div>
-      </div>
-
-      <div className="search-field" style={{ marginBottom: "10px" }}>
-        <span className="search-field__icon" aria-hidden="true">
-          <Search size={16} />
-        </span>
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Buscar por cliente, equipo o problema..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="view__header__actions">
+          <CollapsibleSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por cliente, equipo o problema..."
+          />
+        </div>
       </div>
 
       <div style={{ marginBottom: "14px" }}>
@@ -338,8 +337,9 @@ export function SoporteScreen() {
       {selectedTicket
         ? createPortal(
             <div className="more-sheet" role="dialog" aria-modal="true" aria-label="Detalle de soporte">
-              <div className="more-sheet__backdrop" onClick={() => setSelectedTicket(null)} />
+              <div className="more-sheet__backdrop" onClick={detalleRequestClose} />
               <div
+                ref={detallePanelRef}
                 className="more-sheet__panel"
                 style={{
                   maxHeight: "85vh",
@@ -367,7 +367,7 @@ export function SoporteScreen() {
                     type="button"
                     className="more-sheet__close"
                     aria-label="Cerrar"
-                    onClick={() => setSelectedTicket(null)}
+                    onClick={detalleRequestClose}
                   >
                     <X size={18} />
                   </button>

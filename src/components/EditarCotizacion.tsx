@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronRight, Minus, Package, Plus, Save, Search, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Minus, Package, Plus, Save, Search, Trash2, User, X } from "lucide-react";
 import type { SolicitudRemota } from "../lib/web-api";
 import {
   findProducto,
@@ -20,6 +20,9 @@ import {
   getProductColorLabel,
   PRODUCT_COLORS,
 } from "../lib/product-colors";
+import { MaquinasSheet, type MaquinaItem } from "./MaquinasSheet";
+import { PhoneCountryField } from "./PhoneCountryField";
+import { extraerComunaDeDireccion, formatRut } from "../screens/shared";
 
 interface EditarCotizacionProps {
   item: SolicitudRemota;
@@ -85,6 +88,7 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
   const [guardando, setGuardando] = useState(false);
   const [showProductos, setShowProductos] = useState(false);
   const [collapsing, setCollapsing] = useState<string | null>(null);
+  const [maquinasOpen, setMaquinasOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeCatalogo(setCatalogo);
@@ -120,6 +124,14 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
   }, [productos]);
 
   const totalProductos = productos.reduce((sum, producto) => sum + producto.quantity, 0);
+
+  const maquinasItems: MaquinaItem[] = productos.map((producto) => ({
+    name: producto.name || String(producto.productId || "Producto"),
+    quantity: producto.quantity,
+    unitPrice: precioEfectivo(producto),
+    colorId: producto.selectedColorId,
+    color: producto.selectedColor,
+  }));
 
   const agregar = (product: ProductoCatalogo) => {
     setProductos((prev) => {
@@ -245,19 +257,24 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
               </div>
               <button
                 type="button"
-                className="btn btn--secondary btn--icon"
+                className="more-sheet__close"
                 onClick={onClose}
                 aria-label="Cerrar"
               >
-                <X size={18} />
+                <X size={22} />
               </button>
             </header>
 
             <div className="editor__body">
-              <section className="form-section">
-                <h3 className="form-section__title">Datos del cliente</h3>
+              <section className="form-card">
+                <div className="form-card__header">
+                  <span className="form-card__icon" aria-hidden="true">
+                    <User size={16} />
+                  </span>
+                  <h3 className="form-card__title">Datos del cliente</h3>
+                </div>
                 <div className="form-grid">
-                  <div className="form-field">
+                  <div className="form-field form-field--wide">
                     <label className="form-label" htmlFor="edit-name">Nombre / Razón social</label>
                     <input
                       id="edit-name"
@@ -269,13 +286,10 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                   </div>
                   <div className="form-field">
                     <label className="form-label" htmlFor="edit-phone">Teléfono</label>
-                    <input
+                    <PhoneCountryField
                       id="edit-phone"
-                      className="form-input"
-                      type="tel"
-                      inputMode="tel"
                       value={cliente.phone}
-                      onChange={(event) => setCliente({ ...cliente, phone: event.target.value })}
+                      onChange={(phone) => setCliente({ ...cliente, phone })}
                     />
                   </div>
                   <div className="form-field">
@@ -286,11 +300,12 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                       type="text"
                       value={cliente.rut}
                       onChange={(event) =>
-                        setCliente({ ...cliente, rut: event.target.value.replace(/\D/g, "") })
+                        setCliente({ ...cliente, rut: formatRut(event.target.value) })
                       }
+                      placeholder="12.345.678-9"
                     />
                   </div>
-                  <div className="form-field">
+                  <div className="form-field form-field--wide">
                     <label className="form-label" htmlFor="edit-email">E-mail</label>
                     <input
                       id="edit-email"
@@ -301,24 +316,24 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                       onChange={(event) => setCliente({ ...cliente, email: event.target.value })}
                     />
                   </div>
-                  <div className="form-field">
-                    <label className="form-label" htmlFor="edit-comuna">Comuna</label>
-                    <input
-                      id="edit-comuna"
-                      className="form-input"
-                      type="text"
-                      value={cliente.comuna}
-                      onChange={(event) => setCliente({ ...cliente, comuna: event.target.value })}
-                    />
-                  </div>
                   <div className="form-field form-field--wide">
-                    <label className="form-label" htmlFor="edit-address">Dirección</label>
+                    <label className="form-label" htmlFor="edit-address">
+                      Dirección <span className="form-label__hint">(incluye comuna)</span>
+                    </label>
                     <input
                       id="edit-address"
                       className="form-input"
                       type="text"
                       value={cliente.address}
-                      onChange={(event) => setCliente({ ...cliente, address: event.target.value })}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setCliente({
+                          ...cliente,
+                          address: value,
+                          comuna: extraerComunaDeDireccion(value),
+                        });
+                      }}
+                      placeholder="Ej. Av. Los Pinos 123, Padre Las Casas"
                     />
                   </div>
                 </div>
@@ -334,29 +349,64 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
 
                 {productos.length === 0 ? (
                   <p className="editor__empty">Sin productos seleccionados.</p>
-                ) : (
-                  <ul className="editor-product-list">
-                    {productos.map((producto) => (
-                      <li
-                        key={producto.productId || producto.name}
-                        className="editor-product-row"
-                      >
-                        <span className="editor-product-row__name">
-                          {producto.name || String(producto.productId || "Producto")}
+                ) : productos.length === 1 ? (
+                  <div className="maquina-list">
+                    <div className="maquina-card">
+                      <div className="maquina-card__head">
+                        <span className="maquina-card__name">
+                          {productos[0].name || String(productos[0].productId || "Producto")}
                         </span>
-                        {producto.selectedColorId ? (
-                          <span className="editor-product-row__color">
-                            {getProductColorLabel(producto.selectedColorId) ??
-                              producto.selectedColor}
+                        <span className="maquina-card__qty">×{productos[0].quantity}</span>
+                      </div>
+                      <div className="maquina-card__meta">
+                        {productos[0].selectedColor ? (
+                          <span className="maquina-card__color">
+                            <span
+                              className="maquina-card__dot"
+                              style={{
+                                backgroundColor:
+                                  getProductColorById(productos[0].selectedColorId)?.hex ??
+                                  undefined,
+                              }}
+                              aria-hidden="true"
+                            />
+                            {productos[0].selectedColor}
                           </span>
                         ) : null}
-                        <span className="editor-product-row__qty">× {producto.quantity}</span>
-                        <span className="editor-product-row__total">
-                          {formatPrecio(precioEfectivo(producto) * producto.quantity)}
+                        <strong className="maquina-card__subtotal">
+                          {formatPrecio(
+                            precioEfectivo(productos[0]) * productos[0].quantity,
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="wizard-machines"
+                      onClick={() => setMaquinasOpen(true)}
+                    >
+                      <span className="wizard-machines__info">
+                        <span className="wizard-machines__title">
+                          Ver máquinas seleccionadas
                         </span>
-                      </li>
-                    ))}
-                  </ul>
+                        <span className="wizard-machines__sub">
+                          {productos.length} máquina{productos.length === 1 ? "" : "s"} ·{" "}
+                          {totalProductos} producto{totalProductos === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                      <ChevronRight size={18} />
+                    </button>
+                    {maquinasOpen ? (
+                      <MaquinasSheet
+                        items={maquinasItems}
+                        total={total}
+                        onClose={() => setMaquinasOpen(false)}
+                      />
+                    ) : null}
+                  </>
                 )}
 
                 <button
@@ -378,7 +428,7 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
               </div>
               <button
                 type="button"
-                className="btn btn--primary btn--icon"
+                className="btn btn--primary btn--icon btn--icon-sm"
                 onClick={() => void guardar()}
                 disabled={guardando || productos.length === 0}
                 aria-label="Guardar y generar PDF"
@@ -386,9 +436,8 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                 {guardando ? (
                   <span className="btn__spinner" aria-hidden="true" />
                 ) : (
-                  <Save size={18} strokeWidth={2.5} />
+                  <Save size={20} strokeWidth={2.5} />
                 )}
-                {guardando ? "Guardando…" : ""}
               </button>
             </footer>
           </div>
@@ -400,20 +449,20 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
         createPortal(
           <div className="editor-overlay editor-overlay--front">
             <div className="editor" role="dialog" aria-modal="true" aria-label="Editar productos">
-              <header className="editor__header">
-                <div className="editor__header-info">
-                  <span className="view__eyebrow">Editar cotización</span>
-                  <h2 className="editor__title">Productos</h2>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--icon"
-                  onClick={() => setShowProductos(false)}
-                  aria-label="Cerrar productos"
-                >
-                  <X size={18} />
-                </button>
-              </header>
+            <header className="editor__header">
+              <div className="editor__header-info">
+                <span className="view__eyebrow">Editar cotización</span>
+                <h2 className="editor__title">Productos</h2>
+              </div>
+              <button
+                type="button"
+                className="more-sheet__close"
+                onClick={() => setShowProductos(false)}
+                aria-label="Cerrar productos"
+              >
+                <X size={22} />
+              </button>
+            </header>
 
               <div className="editor__body">
                 <section className="form-section">
@@ -587,14 +636,15 @@ export function EditarCotizacion({ item, onClose }: EditarCotizacionProps) {
                   <span className="editor__total-label">Total ({totalProductos} {totalProductos === 1 ? "producto" : "productos"})</span>
                   <strong className="editor__total-value">{formatPrecio(total)}</strong>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => setShowProductos(false)}
-                >
-                  <Check size={18} strokeWidth={2.5} /> Listo
-                </button>
-              </footer>
+              <button
+                type="button"
+                className="btn btn--primary btn--icon btn--icon-sm"
+                onClick={() => setShowProductos(false)}
+                aria-label="Confirmar productos"
+              >
+                <Check size={20} strokeWidth={2.5} />
+              </button>
+            </footer>
             </div>
           </div>,
           document.body,
